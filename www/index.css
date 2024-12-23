@@ -1,0 +1,180 @@
+:root {
+  background-color: gray;
+  color: white;
+  font-family: Verdana, Geneva, Tahoma, sans-serif;
+  --num-columns: 3;
+  --column-width: 100px;
+  --grid-width: calc(var(--num-columns) * var(--column-width));
+  --color1: #3f3f3f;
+  --color2: #7f7f7f;
+  --color3: #dfdfdf;
+}
+
+a {
+  color: inherit;
+  padding: inherit;
+  text-decoration: none;
+}
+
+#error-close {
+  cursor: pointer;
+}
+
+#error-body {
+  background-color: darkred;
+  padding: 10px;
+  display: none;
+  grid-template-columns: 10px auto;
+  gap: 10px;
+}
+
+.body-div {
+  background-color: var(--color1);
+}
+
+.body-div>* {
+  margin: 10px;
+}
+
+#grid-properties-body {
+  display: grid;
+  grid-template-columns: 67% auto;
+  gap: 10px;
+  background-color: var(--color1);
+}
+
+#grid-body {
+  display: grid;
+  background-color: var(--color1);
+  grid-template-columns: repeat(var(--num-columns), 1fr);
+  max-width: var(--grid-width);
+  text-align: center;
+}
+
+#grid-body>* {
+  border: 1px solid white;
+  min-height: 40px;
+}
+
+#properties-body {
+  border: 1px solid white;
+  line-height: 2rem;
+  padding: 10px;
+}
+
+#properties-body>* {
+  margin: 5px;
+  font-size: 0.75rem;
+}
+
+.property {
+  margin: 0px;
+}
+
+#paths-button-container {
+  text-align: center;
+}
+
+#create-paths-body {
+  overflow: auto;
+  height: 200px;
+}
+
+#create-paths-body,
+#above-properties,
+#paths-button-container {
+  border: 1px solid white;
+  background-color: var(--color1);
+  font-size: 0.75rem;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+.badge {
+  background-color: black;
+  color: white;
+  border-radius: 5px;
+  padding: 0.125rem 0.25rem;
+  font-size: 0.6rem;
+  vertical-align: middle;
+}
+
+.badge.start {
+  background-color: green;
+}
+
+.badge.mark {
+  background-color: darkred;
+}
+
+.badge.visited {
+  background-color: blue;
+}
+
+.path-container {
+  display: inline-flex;
+  vertical-align: middle;
+  gap: 5px;
+  border: 1px solid white;
+  margin: 5px;
+  padding: 5px;
+}
+
+.path-coordinate {
+  display: grid;
+  place-items: center;
+  text-align: center;
+  border: 1px solid white;
+  border-radius: 5px;
+  width: 62.5px;
+  height: 62.5px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.path-coordinate.path-start {
+  background-color: green;
+}
+
+.path-coordinate.path-end {
+  background-color: darkred;
+}
+
+.path-coordinate.highlight-path {
+  background-color: black;
+}
+
+.path-arrow {
+  background-size: cover;
+}
+
+.path-coordinate.path-cost {
+  background-color: blue;
+  cursor: initial;
+}
+
+.highlight-coord {
+  --highlight-color: var(--color3);
+  transition: background-color 0.5s ease, color 0.5s ease;
+  background-color: var(--highlight-color) !important;
+  color: black !important;
+}
+
+.unhighlight-coord {
+  transition: background-color 0.5s ease, color 0.5s ease;
+}
+
+#dummy-paths-section {
+  height: 260px;
+  width: 100%;
+}
+
+#paths-section {
+  position: fixed;
+  bottom: 0px;
+  right: 0;
+  z-index: 2;
+  height: 250px;
+  width: 100%;
+  margin-bottom: 15px;
+}

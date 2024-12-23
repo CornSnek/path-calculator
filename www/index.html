@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Path Calculator</title>
+  <link rel="stylesheet" type="text/css" href="index.css">
+  <script src="wasm_enums_to_js.js"></script>
+  <script src="index.js"></script>
+</head>
+
+<body>
+  <div id="error-body">
+    <strong id="error-close">X</strong>
+    <div id="error-content">Loading Script Please Wait...</div>
+  </div>
+  <div id="above-properties">
+    <div id="other-properties" class="body-div">
+      <label for="revisited-node-cost">Revisited Node Cost</label>
+      <input id="revisited-node-cost" value="5">
+      <label for="default-node-cost">Default Node Cost</label>
+      <input id="default-node-cost" value="100">
+      <a href="#"><em class="badge">Github Repository<img src="images/github-mark-white.png" width="10" height="10"></em></a>
+    </div>
+    <div id="row-column" class="body-div">
+      <label for="columns-num">Columns</label>
+      <input id="columns-num" value="15">
+      <label for="rows-num">Rows</label>
+      <input id="rows-num" value="15">
+      <button type="button" id="generate-grid">Generate</button>
+      <label for="min-random">Random Min Cost</label>
+      <input id="min-random" value="0">
+      <label for="max-random">Random Max Cost</label>
+      <input id="max-random" value="100">
+      <button type="button" id="generate-grid-random">Generate Random</button>
+    </div>
+  </div>
+  <div id="grid-properties-body">
+    <div id="grid-body">
+    </div>
+    <div id="properties-body" class="body-div">
+      <div id="properties-description"></div>
+      <div class="property">
+        <label for="node-x">X (Column#)</label>
+        <input id="node-x" value="N/A" readonly>
+      </div>
+      <div class="property">
+        <label for="node-y">Y (Row#)</label>
+        <input id="node-y" value="N/A" readonly>
+      </div>
+      <div class="property">
+        <label for="cost-num">Node Cost</label>
+        <input id="cost-num" value="0" disabled>
+      </div>
+      <div class="property">
+        <label for="is-start">Mark as start coordinate (<em class="badge start">S</em>)</label>
+        <input type="checkbox" id="is-start" disabled>
+      </div>
+      <div class="property">
+        <label for="as-coordinate">Mark as coordinate to visit (<em class="badge mark">M</em>)</label>
+        <input type="checkbox" id="as-coordinate" disabled>
+      </div>
+      <div class="property">
+        <label for="as-visited">Mark as visited node (<em class="badge visited">V</em>)</label>
+        <input type="checkbox" id="as-visited" disabled>
+      </div>
+      <div>Keybind shortcuts:<br>
+        <em class="badge">C</em> and <em class="badge">Enter</em> to write and save the cost<br>
+        <em class="badge start">S</em>/<em class="badge mark">M</em>/<em class="badge visited">V</em> to mark the node
+        properties above<br>
+        <em class="badge">I</em><em class="badge">J</em><em class="badge">K</em><em class="badge">L</em> or arrow keys
+        (<em class="badge">&uarr;</em><em class="badge">&darr;</em><em class="badge">&larr;</em><em
+          class="badge">&rarr;</em>) to select adjacent nodes
+      </div>
+      <div>
+        <button type="button" id="query-generate-save">Copy to Clipboard</button>
+        Save data as link <em class="badge">?v=...</em> to clipboard.
+        <textarea id="query-save-data" rows=10 cols=50 readonly></textarea>
+      </div>
+    </div>
+  </div>
+  <div id="dummy-paths-section"></div>
+  <div id="paths-section">
+    <div id="paths-button-container">
+      <button type="button" id="generate-paths">Generate Paths To Visit</button>
+      <div>You can hover over coordinates to highlight it on the grid. <b>Bold</b> numbers represent the running total
+        or sum of previous costs. Previous paths will mark nodes as <em class="badge visited">V</em>.</div>
+    </div>
+    <div id="create-paths-body"></div>
+  </div>
+</body>
+
+</html>
