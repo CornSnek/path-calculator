@@ -14,11 +14,11 @@ export fn TestFn() void {
     std.log.debug("Abcd\n", .{});
 }
 
-export fn FindPath(grid_str: [*c]const u8, size: usize) void {
+export fn FindPath(grid_str: [*c]const u8, size: usize, pathfinding_type: usize) void {
     std.debug.assert(grid_str != 0);
     const grid_slice = grid_str[0..size];
     std.log.debug("{s}", .{grid_slice});
-    find_path(grid_slice) catch |e| WasmError(e);
+    find_path(grid_slice, pathfinding_type) catch |e| WasmError(e);
     FlushPrint();
 }
 
@@ -26,11 +26,16 @@ export fn FindPath(grid_str: [*c]const u8, size: usize) void {
 //X format: {Bytes to read (Excluding this byte), Start x, Start y, End x, End y, Path Total Cost, Number of D Directions, D1..., D2... }
 //D format: {Cost of direction, nodes.NodeMap.Direction enum}
 pub var PathfinderArrayList: std.ArrayListUnmanaged(u32) = .{};
-fn find_path(grid_slice: []const u8) !void {
+fn find_path(grid_slice: []const u8, pathfinding_type: usize) !void {
     PathfinderArrayList.clearRetainingCapacity();
+    try PathfinderArrayList.appendSlice(allocator, &.{ 0, 0 }); //&.{Total cost of nodes, Total paths}
     var nmap = try nodes.NodeMap.init(allocator, grid_slice);
     defer nmap.deinit(allocator);
-    try nmap.get_shortest_path(allocator);
+    if (pathfinding_type == @intFromEnum(nodes.NodeMap.PathfindingType.minimum_cost_node)) {
+        try nmap.mcn_path(allocator);
+    } else {
+        try nmap.ssn_path(allocator);
+    }
     ParsePathfinder(PathfinderArrayList.items.ptr, PathfinderArrayList.items.len);
 }
 extern fn ParsePathfinder([*c]u32, usize) void;

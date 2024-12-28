@@ -451,11 +451,43 @@ pub const NodeMap = struct {
         }
         return @as(f32, @floatFromInt(sum)) / @as(f32, @floatFromInt(total_nodes));
     }
-    //Get the shortest path cost for each coordinate given.
-    pub fn get_shortest_path(self: NodeMap, allocator: std.mem.Allocator) !void {
-        if (@import("builtin").os.tag == .freestanding) {
-            try @import("wasm_main.zig").PathfinderArrayList.appendSlice(allocator, &.{ 0, 0 }); //&.{Total cost of nodes, Total paths}
+    pub const PathfindingType = enum {
+        minimum_cost_node,
+        shortest_steps_node,
+        pub fn alt_names(self: PathfindingType) []const u8 {
+            return switch (self) {
+                .minimum_cost_node => "Minimum Cost to Next Node",
+                .shortest_steps_node => "Shortest Steps to Next Node",
+            };
         }
+    };
+    fn wasm_append_path_bytes(shortest_path: PathResult, allocator: std.mem.Allocator) !void {
+        if (@import("builtin").os.tag == .freestanding) {
+            var path_bytes = std.ArrayList(u32).init(allocator);
+            defer path_bytes.deinit();
+            try path_bytes.append(6); //Total number of bytes to read for this path (6 for the bytes appended below excluding the for loop)
+            try path_bytes.append(shortest_path.path.items[0].coord.x);
+            try path_bytes.append(shortest_path.path.items[0].coord.y);
+            try path_bytes.append(shortest_path.path.getLast().coord.x);
+            try path_bytes.append(shortest_path.path.getLast().coord.y);
+            try path_bytes.append(shortest_path.cost);
+            try path_bytes.append(@as(u32, @intCast(shortest_path.path.items.len)) - 1);
+            for (shortest_path.path.items) |pr| {
+                if (pr.direction != .none) {
+                    try path_bytes.append(pr.cost);
+                    try path_bytes.append(@intFromEnum(pr.direction));
+                    path_bytes.items[0] += 2;
+                }
+            }
+            std.log.debug("{any}\n", .{path_bytes.items});
+            const pfptr: *@TypeOf(@import("wasm_main.zig").PathfinderArrayList) = &@import("wasm_main.zig").PathfinderArrayList;
+            pfptr.items[0] += shortest_path.cost;
+            pfptr.items[1] += 1;
+            try pfptr.appendSlice(allocator, path_bytes.items);
+        }
+    }
+    ///Minimum Cost to node pathfinder
+    pub fn mcn_path(self: NodeMap, allocator: std.mem.Allocator) !void {
         var current_c: Coordinate = .{ .x = self.start_x, .y = self.start_y };
         var coordinates_left = try self.coordinates.clone(allocator);
         defer coordinates_left.deinit(allocator);
@@ -494,34 +526,70 @@ pub const NodeMap = struct {
             }
             current_c = possible_next_c.?;
             std.log.debug("{} is the chosen coordinate with path {any} (Total cost is {})\n", .{ current_c, shortest_path.path.items, shortest_path.cost });
-            if (@import("builtin").os.tag == .freestanding) {
-                var path_bytes = std.ArrayList(u32).init(allocator);
-                defer path_bytes.deinit();
-                try path_bytes.append(6); //Total number of bytes to read for this path (6 for the bytes appended below excluding the for loop)
-                try path_bytes.append(shortest_path.path.items[0].coord.x);
-                try path_bytes.append(shortest_path.path.items[0].coord.y);
-                try path_bytes.append(shortest_path.path.getLast().coord.x);
-                try path_bytes.append(shortest_path.path.getLast().coord.y);
-                try path_bytes.append(shortest_path.cost);
-                try path_bytes.append(@as(u32, @intCast(shortest_path.path.items.len)) - 1);
-                for (shortest_path.path.items) |pr| {
-                    if (pr.direction != .none) {
-                        try path_bytes.append(pr.cost);
-                        try path_bytes.append(@intFromEnum(pr.direction));
-                        path_bytes.items[0] += 2;
-                    }
-                }
-                std.log.debug("{any}\n", .{path_bytes.items});
-                const pfptr: *@TypeOf(@import("wasm_main.zig").PathfinderArrayList) = &@import("wasm_main.zig").PathfinderArrayList;
-                pfptr.items[0] += shortest_path.cost;
-                pfptr.items[1] += 1;
-                try pfptr.appendSlice(allocator, path_bytes.items);
-            }
+            try wasm_append_path_bytes(shortest_path, allocator);
             const remove_c = std.sort.binarySearch(Coordinate, current_c, coordinates_left.items, {}, Coordinate.binary_search_fn).?;
             _ = coordinates_left.orderedRemove(remove_c);
             for (shortest_path.path.items) |add_visit_c|
                 shortest_vmap.mark(self, add_visit_c.coord.x, add_visit_c.coord.y, false);
-            //std.log.debug("{any}\n", .{shortest_vmap.map.items});
+        }
+    }
+    const StepsCost = struct {
+        steps: usize,
+        cost: u32,
+        fn max() StepsCost {
+            return .{ .steps = std.math.maxInt(usize), .cost = std.math.maxInt(u32) };
+        }
+        fn order(lhs: StepsCost, rhs: StepsCost) std.math.Order {
+            if (lhs.steps != rhs.steps) {
+                return std.math.order(lhs.steps, rhs.steps);
+            } else return std.math.order(lhs.cost, rhs.cost);
+        }
+    };
+    ///Shortest Steps to node pathfinder
+    pub fn ssn_path(self: NodeMap, allocator: std.mem.Allocator) !void {
+        var current_c: Coordinate = .{ .x = self.start_x, .y = self.start_y };
+        _ = &current_c; // autofix
+        var coordinates_left = try self.coordinates.clone(allocator);
+        defer coordinates_left.deinit(allocator);
+        std.sort.block(Coordinate, coordinates_left.items, {}, Coordinate.block_sort_fn);
+        var shortest_vmap: VisitedMap = try VisitedMap.init(allocator, self);
+        defer shortest_vmap.deinit(allocator);
+        while (coordinates_left.items.len != 0) {
+            var lowest_cost: StepsCost = StepsCost.max();
+            var shortest_path: PathResult = .{};
+            defer shortest_path.deinit(allocator);
+            var temp_vmap = try shortest_vmap.clone(allocator);
+            defer temp_vmap.deinit(allocator);
+            var possible_next_c: ?Coordinate = null;
+            for (coordinates_left.items) |next_c| {
+                var possible_shortest_vmap = try temp_vmap.clone(allocator);
+                errdefer possible_shortest_vmap.deinit(allocator);
+                var result = try self.dijkstra(allocator, &possible_shortest_vmap, current_c, next_c, coordinates_left.items);
+                if (result.path.items.len == 1) { //Exclude unreachable nodes.
+                    possible_shortest_vmap.deinit(allocator);
+                    result.deinit(allocator);
+                    continue;
+                }
+                const result_cost: StepsCost = .{ .steps = result.path.items.len - 1, .cost = result.cost };
+                if (StepsCost.order(result_cost, lowest_cost) == .lt) {
+                    lowest_cost = result_cost;
+                    shortest_path.deinit(allocator);
+                    shortest_path = result;
+                    shortest_vmap.deinit(allocator);
+                    shortest_vmap = possible_shortest_vmap;
+                    possible_next_c = next_c;
+                } else {
+                    possible_shortest_vmap.deinit(allocator);
+                    result.deinit(allocator);
+                }
+            }
+            current_c = possible_next_c.?;
+            std.log.debug("{} is the chosen coordinate with path {any} (Total cost is {})\n", .{ current_c, shortest_path.path.items, shortest_path.cost });
+            try wasm_append_path_bytes(shortest_path, allocator);
+            const remove_c = std.sort.binarySearch(Coordinate, current_c, coordinates_left.items, {}, Coordinate.binary_search_fn).?;
+            _ = coordinates_left.orderedRemove(remove_c);
+            for (shortest_path.path.items) |add_visit_c|
+                shortest_vmap.mark(self, add_visit_c.coord.x, add_visit_c.coord.y, false);
         }
     }
     pub fn get_mst(self: NodeMap, allocator: std.mem.Allocator, vmap: VisitedMap) !void {

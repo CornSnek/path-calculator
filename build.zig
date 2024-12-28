@@ -7,10 +7,18 @@ fn EnumsToJSClass(EnumClass: anytype, export_name: []const u8) []const u8 {
     const fields = std.meta.fields(EnumClass);
     for (fields) |field|
         export_str = export_str ++ std.fmt.comptimePrint("\tstatic get {s}() {{ return {}; }}\n", .{ field.name, field.value });
+    export_str = export_str ++ std.fmt.comptimePrint("\tstatic get $length() {{ return {}; }}\n", .{fields.len});
     export_str = export_str ++ "\tstatic get $names() { return Array.from([";
     for (fields) |field|
         export_str = export_str ++ std.fmt.comptimePrint(" \"{s}\",", .{field.name});
-    export_str = export_str ++ " ]); }\n};\n\n";
+    export_str = export_str ++ " ]); }\n";
+    if (@hasDecl(EnumClass, "alt_names")) {
+        export_str = export_str ++ "\tstatic get $alt_names() { return Array.from([";
+        for (fields) |field|
+            export_str = export_str ++ std.fmt.comptimePrint(" \"{s}\",", .{EnumClass.alt_names(@enumFromInt(field.value))});
+        export_str = export_str ++ " ]); }\n";
+    }
+    export_str = export_str ++ "};\n\n";
     return export_str;
 }
 pub fn build(b: *std.Build) !void {
@@ -43,8 +51,9 @@ pub fn build(b: *std.Build) !void {
     b.getInstallStep().dependOn(&install_website.step);
     install_website_run_step.dependOn(&install_website.step);
 
-    const write_export_enums_str = std.fmt.comptimePrint("//This is auto-generated from the build.zig file to use for wasm-javascript reading\n\n{s}", .{
+    const write_export_enums_str = std.fmt.comptimePrint("//This is auto-generated from the build.zig file to use for wasm-javascript reading\n\n{s}{s}", .{
         comptime EnumsToJSClass(@import("src/nodes.zig").NodeMap.Direction, "Direction"),
+        comptime EnumsToJSClass(@import("src/nodes.zig").NodeMap.PathfindingType, "PathfindingType"),
     });
     const write_export_enums = b.addWriteFile(
         "wasm_enums_to_js.js",

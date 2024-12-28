@@ -18,6 +18,7 @@ let cost_num;
 let is_start;
 let as_coordinate;
 let as_visited;
+let path_algorithm;
 let generate_paths;
 let create_paths_body;
 let query_save_data;
@@ -81,6 +82,13 @@ document.addEventListener("DOMContentLoaded", function () {
   is_start = document.getElementById("is-start");
   as_coordinate = document.getElementById("as-coordinate");
   as_visited = document.getElementById("as-visited");
+  path_algorithm = document.getElementById("path-algorithm");
+  for (let i = 0; i < PathfindingType.$length; i++) {
+    const option = document.createElement("option");
+    path_algorithm.appendChild(option);
+    option.value = i;
+    option.textContent = PathfindingType.$alt_names[i];
+  }
   generate_paths = document.getElementById("generate-paths");
   create_paths_body = document.getElementById("create-paths-body");
   query_save_data = document.getElementById("query-save-data");
@@ -494,7 +502,7 @@ function generate_paths_f() {
   const alloc_mem = Exports.WasmAlloc(enc_grid_str.byteLength);
   const mem_view = new Uint8Array(Exports.memory.buffer, alloc_mem, enc_grid_str.byteLength);
   mem_view.set(enc_grid_str);
-  Exports.FindPath(alloc_mem, enc_grid_str.byteLength);
+  Exports.FindPath(alloc_mem, enc_grid_str.byteLength, path_algorithm.value);
   Exports.WasmFree(alloc_mem);
 }
 class ColorCoordinate {

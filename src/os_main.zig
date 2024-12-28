@@ -65,7 +65,10 @@ pub fn main() !void {
     const allocator = GPA.allocator();
     var nmap = try nodes.NodeMap.init(allocator, ExampleMap3);
     defer nmap.deinit(allocator);
-    try nmap.get_shortest_path(allocator);
+    std.log.debug("LCN pathfind:\n", .{});
+    try nmap.mcn_path(allocator);
+    std.log.debug("SSN pathfind:\n", .{});
+    try nmap.ssn_path(allocator);
 }
 
 test "simple test" {

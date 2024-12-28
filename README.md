@@ -15,10 +15,10 @@ In order to build the website and/or the wasm binary: `zig build wasm -Doptimize
 
 Python 3 is also used to build the server to build and test the website: `zig build server`
 
-## TODO
-Create a pathfinder algorithm for the lowest coin cost.
+## Pathfinding Algorithms
+I'm not sure what the pathfinding algorithms are to solve this problem.
 
 For the Fog Island minigame, there is a mechanic where you can revisit a node or coordinate for a fixed cost of 5 coins.
 This makes finding algorithms to calculate the lowest coin cost trickier because part of a previous path is also considered to be the shortest to a targeted coordinate. Fog Island isn't necessarily a Travelling Salesperson Problem (TSP) due to this mechanic.
 
-The algorithm for the pathfinder currently calculates the lowest coin cost for each individual path, but not all the paths in whole.
+For this reason, there's two pathfinding algorithms that can be used such as selecting the "Next Node is the Minimum Cost" or "Next Node has the Shortest Steps"
