@@ -9,9 +9,11 @@ pub const std_options: std.Options = .{
 };
 pub const panic = @import("wasm_print.zig").panic;
 pub const allocator = std.heap.wasm_allocator;
-usingnamespace jsalloc;
-export fn TestFn() void {
-    std.log.debug("Abcd\n", .{});
+comptime {
+    std.mem.doNotOptimizeAway(jsalloc.WasmAlloc);
+    std.mem.doNotOptimizeAway(jsalloc.WasmFree);
+    std.mem.doNotOptimizeAway(jsalloc.WasmFreeAll);
+    std.mem.doNotOptimizeAway(jsalloc.WasmListAllocs);
 }
 
 export fn FindPath(grid_str: [*c]const u8, size: usize, pathfinding_type: usize) void {

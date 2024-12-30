@@ -3,7 +3,7 @@ fn EnumsToJSClass(EnumClass: anytype, export_name: []const u8) []const u8 {
     if (@typeInfo(EnumClass) != .Enum) @compileError(@typeName(EnumClass) ++ " must be an enum type.");
     var export_str: []const u8 = &.{};
     export_str = export_str ++ std.fmt.comptimePrint("//Exported Zig enums '{s}' to javascript variable name '{s}'\n", .{ @typeName(EnumClass), export_name });
-    export_str = export_str ++ "class " ++ export_name ++ " {\n";
+    export_str = export_str ++ "export class " ++ export_name ++ " {\n";
     const fields = std.meta.fields(EnumClass);
     for (fields) |field|
         export_str = export_str ++ std.fmt.comptimePrint("\tstatic get {s}() {{ return {}; }}\n", .{ field.name, field.value });
@@ -79,7 +79,6 @@ pub fn build(b: *std.Build) !void {
     wasm_exe.entry = .disabled;
     wasm_exe.rdynamic = true;
     wasm_exe.root_module.export_symbol_names = &.{
-        "TestFn",
         "FindPath",
         "FlushPrint",
         "PrintBufferMax",

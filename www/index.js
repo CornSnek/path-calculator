@@ -1,3 +1,4 @@
+import {Direction, PathfindingType} from './wasm_enums_to_js.js'
 let revisited_node_cost;
 let default_node_cost;
 let error_body;
