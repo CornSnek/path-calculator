@@ -18,22 +18,22 @@
   <div id="above-properties">
     <div id="other-properties" class="body-div">
       <label for="revisited-node-cost">Revisited Node Cost</label>
-      <input id="revisited-node-cost" value="5">
+      <input id="revisited-node-cost" value="5" disabled>
       <label for="default-node-cost">Default Node Cost</label>
-      <input id="default-node-cost" value="100">
+      <input id="default-node-cost" value="100" disabled>
       <a href="https://github.com/CornSnek/path-calculator"><em class="badge">Github Repository<img src="images/github-mark-white.png" width="10" height="10"></em></a>
     </div>
     <div id="row-column" class="body-div">
       <label for="columns-num">Columns</label>
-      <input id="columns-num" value="15">
+      <input id="columns-num" value="15" disabled>
       <label for="rows-num">Rows</label>
-      <input id="rows-num" value="15">
-      <button type="button" id="generate-grid">Generate</button>
+      <input id="rows-num" value="15" disabled>
+      <button type="button" id="generate-grid" disabled>Generate</button>
       <label for="min-random">Random Min Cost</label>
-      <input id="min-random" value="0">
+      <input id="min-random" value="0" disabled>
       <label for="max-random">Random Max Cost</label>
-      <input id="max-random" value="100">
-      <button type="button" id="generate-grid-random">Generate Random</button>
+      <input id="max-random" value="100" disabled>
+      <button type="button" id="generate-grid-random" disabled>Generate Random</button>
     </div>
   </div>
   <div id="grid-properties-body">
@@ -84,8 +84,8 @@
   <div id="paths-section">
     <div id="paths-button-container">
       <label for="path-algorithm">Choose pathfinding algorithm:</label>
-      <select id="path-algorithm"></select>
-      <button type="button" id="generate-paths">Generate Paths To Visit</button>
+      <select id="path-algorithm" disabled></select>
+      <button type="button" id="generate-paths" disabled>Generate Paths To Visit</button>
       <button type="button" class="brute-force-only" id="generate-brute-force-early" disabled>Get Brute Force Path Early</button>
       <button type="button" class="brute-force-only" id="cancel-brute-force" disabled>Cancel Brute Force</button>
       <br><em id="path-algorithm-description"></em>
