@@ -54,7 +54,16 @@ function parse_as_row_column() {
   }
 }
 let event_map = new Map();
-document.addEventListener("DOMContentLoaded", function () {
+document.addEventListener("DOMContentLoaded", init);
+async function init() {
+  if ('serviceWorker' in navigator) {
+    try {
+      await navigator.serviceWorker.register('./coi-serviceworker.js', { scope: '/' });
+      console.log('COI service worker registered and active');
+    } catch (err) {
+      console.error('Failed to register COI service worker:', err);
+    }
+  }
   default_node_cost = document.getElementById("default-node-cost");
   default_node_cost.onchange = parse_as_positive_integer.bind({ elem: default_node_cost, elem_name: "Default Node Cost" });
   revisited_node_cost = document.getElementById("revisited-node-cost");
@@ -131,8 +140,10 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     }
   });
+  shared_buffer = new SharedArrayBuffer(3);
+  shared_memory = new Uint8Array(shared_buffer);
   create_wasm_worker();
-});
+}
 function update_query_generate() {
   const link_without_query_str = window.location.href.split("?")[0];
   query_save_data.value = link_without_query_str + "?v=" + encodeURIComponent(generate_query_str());
@@ -654,8 +665,8 @@ const worker_handler_module = {
   OutputBruteForcing,
   JSPrint,
 }
-const shared_buffer = new SharedArrayBuffer(3);
-const shared_memory = new Uint8Array(shared_buffer);
+let shared_buffer;
+let shared_memory;
 const offsets = Object.freeze({
   output: 0,
   brute_force: 1,
