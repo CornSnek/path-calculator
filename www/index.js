@@ -128,7 +128,6 @@ async function init() {
   color2 = getComputedStyle(document.body).getPropertyValue("--color2");
   color3 = getComputedStyle(document.body).getPropertyValue("--color3");
   generate_grid_button.onclick = generate_grid;
-  generate_grid(null, new URL(window.location.href).searchParams.get("v"));
   generate_grid_random_button.onclick = generate_grid_random;
   generate_paths.onclick = generate_paths_f;
   document.addEventListener("keydown", (event) => {
@@ -146,6 +145,7 @@ async function init() {
       shared_buffer = new SharedArrayBuffer(3);
       shared_memory = new Uint8Array(shared_buffer);
       create_wasm_worker();
+      generate_grid(null, new URL(window.location.href).searchParams.get("v"));
       generate_disable_state(false);
     }else{
       setTimeout(init_shared_buffer,1000);
