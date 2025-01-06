@@ -140,9 +140,16 @@ async function init() {
       }
     }
   });
-  shared_buffer = new SharedArrayBuffer(3);
-  shared_memory = new Uint8Array(shared_buffer);
-  create_wasm_worker();
+  function init_shared_buffer(){ //Check crossOriginIsolated before running
+    if(window.crossOriginIsolated){
+      shared_buffer = new SharedArrayBuffer(3);
+      shared_memory = new Uint8Array(shared_buffer);
+      create_wasm_worker();
+    }else{
+      setTimeout(init_shared_buffer,1000);
+    }
+  }
+  init_shared_buffer();
 }
 function update_query_generate() {
   const link_without_query_str = window.location.href.split("?")[0];
