@@ -23,10 +23,6 @@ if (typeof window === 'undefined') {
 
     self.addEventListener("fetch", function (event) {
 
-        if (event.request.url.includes('favicon.ico')) {
-            return; // To allow favicon.ico to load
-        }
-
         const r = event.request;
         if (r.cache === "only-if-cached" && r.mode !== "same-origin") {
             return;
