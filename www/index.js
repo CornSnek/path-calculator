@@ -140,13 +140,16 @@ async function init() {
       }
     }
   });
+  let number_of_tries=0;
   function init_shared_buffer(){ //Check crossOriginIsolated before running
     if(window.crossOriginIsolated){
       shared_buffer = new SharedArrayBuffer(3);
       shared_memory = new Uint8Array(shared_buffer);
       create_wasm_worker();
+      generate_disable_state(false);
     }else{
       setTimeout(init_shared_buffer,1000);
+      if(number_of_tries++==3) window.location.reload();
     }
   }
   init_shared_buffer();
