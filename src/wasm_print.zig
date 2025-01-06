@@ -1,6 +1,6 @@
 //!Overrides logFn and panic to log output to JavaScript.
 const std = @import("std");
-extern fn JSPrint([*c]const u8, usize, PrintType) void;
+pub extern fn JSPrint([*c]const u8, usize, PrintType) void;
 pub fn panic(mesg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
     @setCold(true);
     FlushPrint();
@@ -58,7 +58,7 @@ pub export fn FlushPrint() void {
     if (wasm_printer.pos != 0) JSPrint(&wasm_printer.buf[0], wasm_printer.pos, wasm_printer.init_type orelse .log);
     wasm_printer.reset();
 }
-const PrintType = enum(i32) { log, warn, err };
+pub const PrintType = @import("shared_enums.zig").PrintType;
 const WasmPrinter = struct {
     const WriteError = error{ NeedsFlush, Truncate };
     const Writer = std.io.Writer(*WasmPrinter, WasmPrinter.WriteError, WasmPrinter.write);

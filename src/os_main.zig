@@ -59,16 +59,19 @@ const ExampleMap3 =
     \\c
     \\9,10 8,11 9,11 10,11 9,12
 ;
+const ExampleMap4 = "r5\n50v 52v 41 26 54v 87 14 95v 99 50 2 65 13 75v 52\n9 33v 36 32v 23v 16v 90 57 69 87v 45 45 44v 40 46v\n77v 66v 1 28 29v 70v 11 45v 59 14v 98 96 54v 71 27\n86 97 77v 26v 55v 44 21 17v 90 54v 42 68 59 33 12v\n63 85 57 24 28v 8v 66v 29v 98 78 1v 26v 11v 41v 99v\n21v 66v 96 4v 0 96 15v 99v 35v 83 67 91 28 15 65v\n82 13v 23 2v 91v 1 30 69v 11 9v 29v 15v 16 56v 59v\n100v 97 3 11v 27 17v 2 s 45v 31v 29v 20v 80v 95 10\n16 67 36 74v 89 15v 72 59 54 47 42 78v 67 62 25v\n66 44 32v 10v 86v 10v 8 35 94v 98 41v 47 10 17v 25\n69v 29 2 33 73 97v 33 23v 81 31v 23 34v 2v 60 84v\n33v 65v 19 3 77 60 6v 40v 81 6 67v 5v 23v 45 31\n86 87v 39 36v 49v 15v 63 81v 88 17v 1v 67 64v 90v 84v\n1v 56 83v 51v 73v 17v 33v 74v 73v 23v 67v 8 32v 22 33v\n78 8v 71 88v 65 71 54 89 14 50v 92 32 63v 27 43\nc\n0,0 7,0 14,0 0,7 14,7 0,14 7,14 14,14 \n";
 pub fn main() !void {
     var GPA: std.heap.GeneralPurposeAllocator(.{}) = .{};
     defer _ = GPA.deinit();
     const allocator = GPA.allocator();
-    var nmap = try nodes.NodeMap.init(allocator, ExampleMap3);
+    var nmap = try nodes.NodeMap.init(allocator, ExampleMap4);
     defer nmap.deinit(allocator);
-    std.log.debug("LCN pathfind:\n", .{});
+    std.log.debug("\nLCN pathfind:\n", .{});
     try nmap.mcn_path(allocator);
-    std.log.debug("SSN pathfind:\n", .{});
+    std.log.debug("\nSSN pathfind:\n", .{});
     try nmap.ssn_path(allocator);
+    std.log.debug("\nBruteforce pathfind:\n", .{});
+    try nmap.brute_force_path(allocator);
 }
 
 test "simple test" {

@@ -7,27 +7,33 @@ fn EnumsToJSClass(EnumClass: anytype, export_name: []const u8) []const u8 {
     const fields = std.meta.fields(EnumClass);
     for (fields) |field|
         export_str = export_str ++ std.fmt.comptimePrint("\tstatic get {s}() {{ return {}; }}\n", .{ field.name, field.value });
-    export_str = export_str ++ std.fmt.comptimePrint("\tstatic get $length() {{ return {}; }}\n", .{fields.len});
-    export_str = export_str ++ "\tstatic get $names() { return Array.from([";
+    export_str = export_str ++ std.fmt.comptimePrint("\tstatic get $$length() {{ return {}; }}\n", .{fields.len});
+    export_str = export_str ++ "\tstatic get $$names() { return Array.from([";
     for (fields) |field|
         export_str = export_str ++ std.fmt.comptimePrint(" \"{s}\",", .{field.name});
     export_str = export_str ++ " ]); }\n";
-    if (@hasDecl(EnumClass, "alt_names")) {
-        export_str = export_str ++ "\tstatic get $alt_names() { return Array.from([";
-        for (fields) |field|
-            export_str = export_str ++ std.fmt.comptimePrint(" \"{s}\",", .{EnumClass.alt_names(@enumFromInt(field.value))});
-        export_str = export_str ++ " ]); }\n";
+    for (@typeInfo(EnumClass).Enum.decls) |decl| { //Get string descriptions of enums.
+        const DeclType = @TypeOf(@field(EnumClass, decl.name));
+        if (@typeInfo(DeclType) == .Fn) {
+            const FnInfo = @typeInfo(DeclType).Fn;
+            if (FnInfo.return_type == []const u8 and FnInfo.params.len == 1 and FnInfo.params[0].type == EnumClass) {
+                export_str = export_str ++ "\tstatic get $" ++ decl.name ++ "() { return Array.from([";
+                for (fields) |field|
+                    export_str = export_str ++ std.fmt.comptimePrint(" \"{s}\",", .{@field(EnumClass, decl.name)(@enumFromInt(field.value))});
+                export_str = export_str ++ " ]); }\n";
+            }
+        }
     }
     export_str = export_str ++ "};\n\n";
     return export_str;
 }
 pub fn build(b: *std.Build) !void {
     const www_root = "www";
-    const program_name = "pathfinder";
+    const wasm_name = "pathfinder";
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const exe = b.addExecutable(.{
-        .name = program_name,
+        .name = wasm_name,
         .root_source_file = b.path("src/os_main.zig"),
         .target = target,
         .optimize = optimize,
@@ -50,10 +56,11 @@ pub fn build(b: *std.Build) !void {
     install_website.step.dependOn(b.getUninstallStep());
     b.getInstallStep().dependOn(&install_website.step);
     install_website_run_step.dependOn(&install_website.step);
-
-    const write_export_enums_str = std.fmt.comptimePrint("//This is auto-generated from the build.zig file to use for wasm-javascript reading\n\n{s}{s}", .{
-        comptime EnumsToJSClass(@import("src/nodes.zig").NodeMap.Direction, "Direction"),
-        comptime EnumsToJSClass(@import("src/nodes.zig").NodeMap.PathfindingType, "PathfindingType"),
+    const shared_enums = @import("src/shared_enums.zig");
+    const write_export_enums_str = std.fmt.comptimePrint("//This is auto-generated from the build.zig file to use for wasm-javascript reading\n\n{s}{s}{s}", .{
+        comptime EnumsToJSClass(shared_enums.Direction, "Direction"),
+        comptime EnumsToJSClass(shared_enums.PathfindingType, "PathfindingType"),
+        comptime EnumsToJSClass(shared_enums.PrintType, "PrintType"),
     });
     const write_export_enums = b.addWriteFile(
         "wasm_enums_to_js.js",
@@ -68,7 +75,7 @@ pub fn build(b: *std.Build) !void {
     add_export_enums.step.dependOn(&write_export_enums.step);
 
     const wasm_exe = b.addExecutable(.{
-        .name = program_name,
+        .name = wasm_name,
         .root_source_file = b.path("src/wasm_main.zig"),
         .target = b.resolveTargetQuery(.{
             .cpu_arch = .wasm32,
@@ -87,16 +94,17 @@ pub fn build(b: *std.Build) !void {
         "WasmFree",
         "WasmFreeAll",
     };
+
     const install_wasm = b.addInstallArtifact(wasm_exe, .{
-        .dest_sub_path = try std.fmt.allocPrint(b.allocator, "{s}/{s}.wasm", .{ www_root, program_name }),
+        .dest_sub_path = try std.fmt.allocPrint(b.allocator, "{s}/{s}.wasm", .{ www_root, wasm_name }),
     });
-    const wasm_step = b.step("wasm", "Build wasm binary and copies files to bin.");
+    const wasm_step = b.step("wasm", "Build wasm binaries and copies files to bin.");
     wasm_step.dependOn(&install_wasm.step);
     install_wasm.step.dependOn(&add_export_enums.step);
     install_wasm.step.dependOn(&install_website.step);
 
     const run_website_step = b.step("server", "Initializes the wasm step, and runs python http.server");
-    const python_http = b.addSystemCommand(&.{ "python", "-m", "http.server", "-d", "zig-out/bin/" ++ www_root ++ "/" });
+    const python_http = b.addSystemCommand(&.{ "python", "test_website.py" });
     run_website_step.dependOn(&python_http.step);
     python_http.step.dependOn(&install_wasm.step);
 }

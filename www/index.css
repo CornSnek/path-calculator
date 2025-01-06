@@ -1,7 +1,7 @@
 :root {
   background-color: gray;
   color: white;
-  font-family: Verdana, Geneva, Tahoma, sans-serif;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   --num-columns: 3;
   --column-width: 100px;
   --grid-width: calc(var(--num-columns) * var(--column-width));
@@ -165,7 +165,7 @@ a {
 }
 
 #dummy-paths-section {
-  height: 260px;
+  height: 280px;
   width: 100%;
 }
 
@@ -174,7 +174,11 @@ a {
   bottom: 0px;
   right: 0;
   z-index: 2;
-  height: 250px;
+  height: 270px;
   width: 100%;
   margin-bottom: 15px;
+}
+
+.brute-force-only {
+  display: none
 }

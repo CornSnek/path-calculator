@@ -1,4 +1,4 @@
-import {Direction, PathfindingType} from './wasm_enums_to_js.js'
+import { Direction, PathfindingType, PrintType } from './wasm_enums_to_js.js'
 let revisited_node_cost;
 let default_node_cost;
 let error_body;
@@ -20,14 +20,14 @@ let is_start;
 let as_coordinate;
 let as_visited;
 let path_algorithm;
+let path_algorithm_description;
 let generate_paths;
 let create_paths_body;
 let query_save_data;
 let query_generate_save;
-let WasmObj = null;
-let Exports = null;
-let TD = new TextDecoder();
-let TE = new TextEncoder();
+let generate_brute_force_early;
+let cancel_brute_force;
+let wasm_worker;
 let color1;
 let color2;
 let color3;
@@ -84,11 +84,31 @@ document.addEventListener("DOMContentLoaded", function () {
   as_coordinate = document.getElementById("as-coordinate");
   as_visited = document.getElementById("as-visited");
   path_algorithm = document.getElementById("path-algorithm");
-  for (let i = 0; i < PathfindingType.$length; i++) {
+  path_algorithm_description = document.getElementById("path-algorithm-description");
+  generate_brute_force_early = document.getElementById("generate-brute-force-early");
+  generate_brute_force_early.onclick = () => {
+    Atomics.store(shared_memory, offsets.brute_force, 1);
+  }
+  cancel_brute_force = document.getElementById("cancel-brute-force");
+  for (let i = 0; i < PathfindingType.$$length; i++) {
     const option = document.createElement("option");
     path_algorithm.appendChild(option);
     option.value = i;
     option.textContent = PathfindingType.$alt_names[i];
+  }
+  path_algorithm.onchange = (e) => {
+    const pathfinder_int = parseInt(e.target.value);
+    path_algorithm_description.textContent = PathfindingType.$description[pathfinder_int];
+    if (pathfinder_int !== PathfindingType.brute_forcing) {
+      document.querySelectorAll(".brute-force-only").forEach(e => {
+        e.style.display = "none";
+      });
+    } else {
+      document.querySelectorAll(".brute-force-only").forEach(e => {
+        e.style.display = "initial";
+      })
+    }
+
   }
   generate_paths = document.getElementById("generate-paths");
   create_paths_body = document.getElementById("create-paths-body");
@@ -111,15 +131,7 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     }
   });
-  WebAssembly.instantiateStreaming(fetch("./pathfinder.wasm"), {
-    env: {
-      JSPrint,
-      ParsePathfinder,
-    },
-  }).then(result => {
-    WasmObj = result;
-    Exports = result.instance.exports;
-  });
+  create_wasm_worker();
 });
 function update_query_generate() {
   const link_without_query_str = window.location.href.split("?")[0];
@@ -496,15 +508,10 @@ function generate_query_str() {
   return str_output + coord_str;
 }
 function generate_paths_f() {
+  generate_disable_state(true);
   node_f_clear();
   create_paths_body.textContent = "";
-  Exports.WasmFreeAll();
-  const enc_grid_str = TE.encode(generate_query_str());
-  const alloc_mem = Exports.WasmAlloc(enc_grid_str.byteLength);
-  const mem_view = new Uint8Array(Exports.memory.buffer, alloc_mem, enc_grid_str.byteLength);
-  mem_view.set(enc_grid_str);
-  Exports.FindPath(alloc_mem, enc_grid_str.byteLength, path_algorithm.value);
-  Exports.WasmFree(alloc_mem);
+  wasm_worker.postMessage(["f", "FindPath", generate_query_str(), path_algorithm.value]);
 }
 class ColorCoordinate {
   constructor(coord, color) {
@@ -550,10 +557,9 @@ function unhighlight_all_f() {
   this.d.classList.add("unhighlight-coord");
   this.d.classList.remove("highlight-coord");
 }
-function ParsePathfinder(pathfinder_ptr, pathfinder_len) {
-  Exports.FlushPrint();
+function ParsePathfinder(pathfinder) {
+  create_paths_body.textContent = "";
   const node_divs = Array.from(grid_body.children);
-  const pathfinder = new Uint32Array(Exports.memory.buffer, pathfinder_ptr, pathfinder_len);
   let offset = 2;
   let running_total = 0;
   let path_running_total = 0;
@@ -608,7 +614,7 @@ function ParsePathfinder(pathfinder_ptr, pathfinder_len) {
     for (let d = 0; d < directions_read; d++) {
       const node_cost = slice[6 + 2 * d];
       const direction = slice[6 + 2 * d + 1];
-      const direction_name = Direction.$names[direction];
+      const direction_name = Direction.$$names[direction];
       switch (direction) {
         case Direction.left: coord_x -= 1; break;
         case Direction.right: coord_x += 1; break;
@@ -640,14 +646,69 @@ function ParsePathfinder(pathfinder_ptr, pathfinder_len) {
     offset += bytes_read + 1;
   }
 }
-function JSPrint(BufferAddr, Len, Type) {
-  const string = TD.decode(new Uint8Array(Exports.memory.buffer, BufferAddr, Len));
-  if (Type == 0) {
+
+const worker_handler_module = {
+  set_error_message,
+  generate_disable_state,
+  ParsePathfinder,
+  OutputBruteForcing,
+  JSPrint,
+}
+const shared_buffer = new SharedArrayBuffer(3);
+const shared_memory = new Uint8Array(shared_buffer);
+const offsets = Object.freeze({
+  output: 0,
+  brute_force: 1,
+  cancel: 2,
+});
+function create_wasm_worker() {
+  wasm_worker = new Worker("wasm.js");
+  wasm_worker.onmessage = e => {
+    if (e.data[0] == 'f') {
+      worker_handler_module[e.data[1]](...e.data.slice(2));
+    } else {
+      console.error("Invalid postMessage flag: " + e.data[0]);
+    }
+  };
+  wasm_worker.onerror = () => generate_disable_state(false);
+  wasm_worker.postMessage(['m', shared_buffer, offsets]);
+  cancel_brute_force.onclick = () => {
+    Atomics.store(shared_memory, offsets.cancel, 1);
+  }
+}
+function OutputBruteForcing(str) {
+  path_algorithm_description.innerHTML = str;
+}
+let output_interval_i = null;
+function generate_disable_state(bool) {
+  revisited_node_cost.disabled = bool;
+  default_node_cost.disabled = bool;
+  columns_num_input.disabled = bool;
+  rows_num_input.disabled = bool;
+  min_random.disabled = bool;
+  max_random.disabled = bool;
+  generate_grid_button.disabled = bool;
+  generate_grid_random_button.disabled = bool;
+  generate_paths.disabled = bool;
+  path_algorithm.disabled = bool;
+  generate_brute_force_early.disabled = !bool;
+  cancel_brute_force.disabled = !bool;
+  if (bool) {
+    if (output_interval_i === null)
+      output_interval_i = setInterval(() => Atomics.store(shared_memory, offsets.output, 1), 1000);
+  } else {
+    if (output_interval_i !== null)
+      clearInterval(output_interval_i);
+    output_interval_i = null;
+  }
+}
+function JSPrint(Type, string) {
+  if (Type === PrintType.log) {
     console.log(string);
-  } else if (Type == 1) {
+  } else if (Type === PrintType.warn) {
     console.warn(string);
   } else {
+    set_error_message(string);
     console.error(string);
-    set_error_message(`${string}`);
   }
 }

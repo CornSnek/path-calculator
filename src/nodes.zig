@@ -278,18 +278,10 @@ pub const NodeMap = struct {
     const PathResult = struct {
         cost: u32 = std.math.maxInt(u32),
         path: std.ArrayListUnmanaged(NodeResult) = .{},
-        fn concat(left: PathResult, allocator: std.mem.Allocator, right: PathResult) PathResult {
-            std.debug.assert(left.path.items.len != 0);
-            const left_last = left.path.getLast();
-            const right_first = right.path.items[0];
-            std.debug.assert(left_last.x == right_first.x and left_last.y == right_first.y);
-            var new_pr: PathResult = .{ .cost = left.cost + right.cost };
-            errdefer new_pr.deinit(allocator);
-            try new_pr.path.appendSlice(allocator, left.path.items[0 .. left.path.items.len - 1]);
-            try new_pr.path.appendSlice(allocator, right.path.items);
-            return new_pr;
+        fn clone(self: PathResult, allocator: std.mem.Allocator) !PathResult {
+            return .{ .cost = self.cost, .path = try self.path.clone(allocator) };
         }
-        pub fn deinit(self: *PathResult, allocator: std.mem.Allocator) void {
+        fn deinit(self: *PathResult, allocator: std.mem.Allocator) void {
             self.path.deinit(allocator);
         }
     };
@@ -454,13 +446,33 @@ pub const NodeMap = struct {
     pub const PathfindingType = enum {
         minimum_cost_node,
         shortest_steps_node,
+        brute_forcing,
         pub fn alt_names(self: PathfindingType) []const u8 {
             return switch (self) {
                 .minimum_cost_node => "Minimum Cost to Next Node",
                 .shortest_steps_node => "Shortest Steps to Next Node",
+                .brute_forcing => "Brute Forcing",
+            };
+        }
+        pub fn description(self: PathfindingType) []const u8 {
+            return switch (self) {
+                .minimum_cost_node => "The least cost node is chosen first for each path.",
+                .shortest_steps_node => "The node with the shortest amount of steps is chosen first for each path.",
+                .brute_forcing => "Warning! Brute Forcing is extremely slow when selecting a large amount of coordinates, but this pathfinding guarantees the lowest cost.",
             };
         }
     };
+    //Pathfinder byte format: {Combined Path Total Cost, Total number of X paths, X1..., X2... }
+    //X format: {Bytes to read (Excluding this byte), Start x, Start y, End x, End y, Path Total Cost, Number of D Directions, D1..., D2... }
+    //D format: {Cost of direction, nodes.NodeMap.Direction enum}
+    pub var PathfinderArrayList: std.ArrayListUnmanaged(u32) = .{};
+    extern fn ParsePathfinder([*c]u32, usize, bool) void;
+    fn wasm_start_pathfinder(allocator: std.mem.Allocator) !void {
+        if (@import("builtin").os.tag == .freestanding) {
+            PathfinderArrayList.clearRetainingCapacity();
+            try PathfinderArrayList.appendSlice(allocator, &.{ 0, 0 }); //&.{Total cost of nodes, Total paths}
+        }
+    }
     fn wasm_append_path_bytes(shortest_path: PathResult, allocator: std.mem.Allocator) !void {
         if (@import("builtin").os.tag == .freestanding) {
             var path_bytes = std.ArrayList(u32).init(allocator);
@@ -480,21 +492,24 @@ pub const NodeMap = struct {
                 }
             }
             std.log.debug("{any}\n", .{path_bytes.items});
-            const pfptr: *@TypeOf(@import("wasm_main.zig").PathfinderArrayList) = &@import("wasm_main.zig").PathfinderArrayList;
-            pfptr.items[0] += shortest_path.cost;
-            pfptr.items[1] += 1;
-            try pfptr.appendSlice(allocator, path_bytes.items);
+            PathfinderArrayList.items[0] += shortest_path.cost;
+            PathfinderArrayList.items[1] += 1;
+            try PathfinderArrayList.appendSlice(allocator, path_bytes.items);
         }
+    }
+    fn wasm_end_pathfinder(continue_disable: bool) void {
+        if (@import("builtin").os.tag == .freestanding) ParsePathfinder(PathfinderArrayList.items.ptr, PathfinderArrayList.items.len, continue_disable);
     }
     ///Minimum Cost to node pathfinder
     pub fn mcn_path(self: NodeMap, allocator: std.mem.Allocator) !void {
+        try wasm_start_pathfinder(allocator);
         var current_c: Coordinate = .{ .x = self.start_x, .y = self.start_y };
         var coordinates_left = try self.coordinates.clone(allocator);
         defer coordinates_left.deinit(allocator);
         std.sort.block(Coordinate, coordinates_left.items, {}, Coordinate.block_sort_fn);
         var shortest_vmap: VisitedMap = try VisitedMap.init(allocator, self);
         defer shortest_vmap.deinit(allocator);
-        //std.log.debug("{any}\n", .{shortest_vmap.map.items});
+        var total_cost: u32 = 0;
         while (coordinates_left.items.len != 0) {
             var lowest_cost: u32 = std.math.maxInt(u32);
             var shortest_path: PathResult = .{};
@@ -524,6 +539,7 @@ pub const NodeMap = struct {
                 }
                 //std.log.debug("{d} {} {any}\n", .{ avg, next_c, result.path.items });
             }
+            total_cost += shortest_path.cost;
             current_c = possible_next_c.?;
             std.log.debug("{} is the chosen coordinate with path {any} (Total cost is {})\n", .{ current_c, shortest_path.path.items, shortest_path.cost });
             try wasm_append_path_bytes(shortest_path, allocator);
@@ -532,6 +548,8 @@ pub const NodeMap = struct {
             for (shortest_path.path.items) |add_visit_c|
                 shortest_vmap.mark(self, add_visit_c.coord.x, add_visit_c.coord.y, false);
         }
+        std.log.debug("Total cost for this pathfind is {}.\n", .{total_cost});
+        wasm_end_pathfinder(false);
     }
     const StepsCost = struct {
         steps: usize,
@@ -547,13 +565,14 @@ pub const NodeMap = struct {
     };
     ///Shortest Steps to node pathfinder
     pub fn ssn_path(self: NodeMap, allocator: std.mem.Allocator) !void {
+        try wasm_start_pathfinder(allocator);
         var current_c: Coordinate = .{ .x = self.start_x, .y = self.start_y };
-        _ = &current_c; // autofix
         var coordinates_left = try self.coordinates.clone(allocator);
         defer coordinates_left.deinit(allocator);
         std.sort.block(Coordinate, coordinates_left.items, {}, Coordinate.block_sort_fn);
         var shortest_vmap: VisitedMap = try VisitedMap.init(allocator, self);
         defer shortest_vmap.deinit(allocator);
+        var total_cost: u32 = 0;
         while (coordinates_left.items.len != 0) {
             var lowest_cost: StepsCost = StepsCost.max();
             var shortest_path: PathResult = .{};
@@ -583,6 +602,7 @@ pub const NodeMap = struct {
                     result.deinit(allocator);
                 }
             }
+            total_cost += shortest_path.cost;
             current_c = possible_next_c.?;
             std.log.debug("{} is the chosen coordinate with path {any} (Total cost is {})\n", .{ current_c, shortest_path.path.items, shortest_path.cost });
             try wasm_append_path_bytes(shortest_path, allocator);
@@ -591,21 +611,170 @@ pub const NodeMap = struct {
             for (shortest_path.path.items) |add_visit_c|
                 shortest_vmap.mark(self, add_visit_c.coord.x, add_visit_c.coord.y, false);
         }
+        std.log.debug("Total cost for this pathfind is {}.\n", .{total_cost});
+        wasm_end_pathfinder(false);
     }
-    pub fn get_mst(self: NodeMap, allocator: std.mem.Allocator, vmap: VisitedMap) !void {
-        var coordinates_list = try self.coordinates.clone(allocator);
-        defer coordinates_list.deinit(allocator);
-        try coordinates_list.append(allocator, .{ .x = self.start_x, .y = self.start_y });
-        for (0..coordinates_list.items.len) |i| {
-            for (i + 1..coordinates_list.items.len) |j| {
-                var temp_vmap = try vmap.clone(allocator);
-                defer temp_vmap.deinit(allocator);
-                std.log.debug("{} {} {} {}\n", .{ i, coordinates_list.items[i], j, coordinates_list.items[j] });
-                var path = try self.dijkstra(allocator, &temp_vmap, coordinates_list.items[i], coordinates_list.items[j], coordinates_list.items);
-                defer path.deinit(allocator);
-                std.log.debug("{} {any}\n", .{ path.cost, path.path.items });
+    /// Next lexicographical order of a permutation of a slice.
+    fn permutation_next(comptime T: type, items: []T, context: anytype, comptime less_than: fn (@TypeOf(context), lhs: T, rhs: T) bool) bool {
+        for (0..items.len - 1) |i| {
+            const pivot_i = items.len - 2 - i;
+            if (less_than(context, items[pivot_i], items[pivot_i + 1])) {
+                for (0..items.len - 1 - pivot_i) |j| {
+                    const righmost_larger_i = items.len - 1 - j;
+                    if (less_than(context, items[pivot_i], items[righmost_larger_i])) {
+                        std.mem.swap(T, &items[pivot_i], &items[righmost_larger_i]);
+                        std.mem.reverse(T, items[pivot_i + 1 ..]);
+                        return true;
+                    }
+                }
             }
         }
+        return false;
+    }
+    /// To cache consecutive coordinates/paths/visitem maps together when choosing a new permutation of coordinates.
+    const BFResults = struct {
+        const BFNode = struct { vmap: VisitedMap, coord: Coordinate, path: PathResult };
+        nodes: std.ArrayListUnmanaged(BFNode) = .{},
+        fn get_total_cost(self: BFResults) u32 {
+            var res: u32 = 0;
+            for (self.nodes.items) |bfn| res += bfn.path.cost;
+            return res;
+        }
+        fn last_vmap(self: BFResults, allocator: std.mem.Allocator) !?VisitedMap {
+            return if (self.nodes.items.len != 0) try self.nodes.getLast().vmap.clone(allocator) else null;
+        }
+        fn last_coord(self: BFResults) ?Coordinate {
+            return if (self.nodes.items.len != 0) self.nodes.getLast().coord else null;
+        }
+        fn path_results(self: BFResults, allocator: std.mem.Allocator) !std.ArrayListUnmanaged(PathResult) {
+            var list: std.ArrayListUnmanaged(PathResult) = .{};
+            errdefer list.deinit(allocator);
+            try list.ensureTotalCapacity(allocator, self.nodes.items.len);
+            for (self.nodes.items) |bfn| list.appendAssumeCapacity(try bfn.path.clone(allocator));
+            return list;
+        }
+        fn remove_non_consecutive(self: *BFResults, coords: []const Coordinate, allocator: std.mem.Allocator) usize {
+            var consecutive_num: usize = 0;
+            for (0..self.nodes.items.len) |i| {
+                const bfcoord = self.nodes.items[i].coord;
+                if (coords[i].x == bfcoord.x and coords[i].y == bfcoord.y) {
+                    consecutive_num += 1;
+                } else break;
+            }
+            for (consecutive_num..self.nodes.items.len) |i| { //Deinitialize and remove non-consecutive nodes.
+                const bfn = &self.nodes.items[i];
+                bfn.vmap.deinit(allocator);
+                bfn.path.deinit(allocator);
+            }
+            self.nodes.items.len = consecutive_num;
+            return consecutive_num;
+        }
+        fn deinit(self: *BFResults, allocator: std.mem.Allocator) void {
+            for (self.nodes.items) |*bfn| {
+                bfn.vmap.deinit(allocator);
+                bfn.path.deinit(allocator);
+            }
+            self.nodes.deinit(allocator);
+        }
+    };
+    extern fn CalculateBruteForceEarly() bool;
+    extern fn GetOutput() bool;
+    extern fn GetCancel() bool;
+    extern fn OutputBruteForcing([*c]const u8, usize) void;
+    pub fn brute_force_path(self: NodeMap, allocator: std.mem.Allocator) !void {
+        var sorted_coordinates = try self.coordinates.clone(allocator);
+        defer sorted_coordinates.deinit(allocator);
+        std.sort.block(Coordinate, sorted_coordinates.items, {}, Coordinate.block_sort_fn);
+        var lowest_results: std.ArrayListUnmanaged(PathResult) = .{};
+        defer {
+            for (lowest_results.items) |*res| {
+                res.deinit(allocator);
+            }
+            lowest_results.deinit(allocator);
+        }
+        var lowest_total_cost: u32 = std.math.maxInt(u32);
+        var bfr: BFResults = .{};
+        defer bfr.deinit(allocator);
+        var test_output: std.ArrayListUnmanaged(u8) = .{};
+        defer test_output.deinit(allocator);
+        while (!GetCancel()) {
+            var next_coordinates = try sorted_coordinates.clone(allocator);
+            defer next_coordinates.deinit(allocator);
+            if (@import("builtin").os.tag == .freestanding) {
+                if (GetOutput()) {
+                    for (next_coordinates.items) |c| {
+                        try test_output.writer(allocator).print("[{: >2},{: >2}] => ", .{ c.x, c.y });
+                    }
+                    test_output.items.len -= " => ".len;
+                    try test_output.writer(allocator).print("<br>Current Lowest Total Cost: {}. You can press 'Get Brute Force Path Early' to get a calculated path, but the lowest cost path may not be found yet.", .{lowest_total_cost});
+                    OutputBruteForcing(test_output.items.ptr, test_output.items.len);
+                    test_output.items.len = 0;
+                }
+            }
+            const consecutive_num = bfr.remove_non_consecutive(next_coordinates.items, allocator);
+            var possible_lowest_cost: u32 = bfr.get_total_cost();
+            var possible_lowest_results: std.ArrayListUnmanaged(PathResult) = try bfr.path_results(allocator);
+            var vmap: VisitedMap = try bfr.last_vmap(allocator) orelse try VisitedMap.init(allocator, self);
+            defer vmap.deinit(allocator);
+            var current_c: Coordinate = bfr.last_coord() orelse .{ .x = self.start_x, .y = self.start_y };
+            next_permutation: {
+                for (consecutive_num..next_coordinates.items.len) |i| {
+                    const next_c = next_coordinates.items[i];
+                    var result = try self.dijkstra(allocator, &vmap, current_c, next_c, next_coordinates.items[i + 1 ..]);
+                    if (result.path.items.len == 1) { //Exclude paths with unreachable nodes.
+                        result.deinit(allocator);
+                        for (possible_lowest_results.items) |*res| {
+                            res.deinit(allocator);
+                        }
+                        possible_lowest_results.deinit(allocator);
+                        break :next_permutation;
+                    }
+                    try possible_lowest_results.append(allocator, result);
+                    possible_lowest_cost += result.cost;
+                    if (possible_lowest_cost >= lowest_total_cost) {
+                        for (possible_lowest_results.items) |*res| {
+                            res.deinit(allocator);
+                        }
+                        possible_lowest_results.deinit(allocator);
+                        break :next_permutation;
+                    }
+                    try bfr.nodes.append(allocator, .{ .coord = next_c, .vmap = try vmap.clone(allocator), .path = try result.clone(allocator) });
+                    current_c = next_c;
+                }
+                std.log.debug("Found lower cost of {}\n", .{possible_lowest_cost});
+                for (possible_lowest_results.items) |result| {
+                    std.log.debug("{} is the chosen coordinate with path {any} (Total cost is {})\n", .{ result.path.getLast().coord, result.path.items, result.cost });
+                }
+                std.log.debug("Total cost for this pathfind is {}.\n\n", .{possible_lowest_cost});
+                lowest_total_cost = possible_lowest_cost;
+                for (lowest_results.items) |*res| {
+                    res.deinit(allocator);
+                }
+                lowest_results.deinit(allocator);
+                lowest_results = possible_lowest_results;
+            }
+            if (@import("builtin").os.tag == .freestanding) {
+                if (CalculateBruteForceEarly()) {
+                    try wasm_start_pathfinder(allocator);
+                    for (lowest_results.items) |result| {
+                        try wasm_append_path_bytes(result, allocator);
+                    }
+                    wasm_end_pathfinder(true);
+                }
+            }
+            if (!permutation_next(Coordinate, sorted_coordinates.items, {}, Coordinate.block_sort_fn)) break;
+        }
+        if (@import("builtin").os.tag == .freestanding) {
+            const bfdesc = PathfindingType.brute_forcing.description();
+            OutputBruteForcing(bfdesc.ptr, bfdesc.len);
+        }
+        try wasm_start_pathfinder(allocator);
+        for (lowest_results.items) |result| {
+            std.log.debug("{} is the chosen coordinate with path {any} (Total cost is {})\n", .{ result.path.getLast().coord, result.path.items, result.cost });
+            try wasm_append_path_bytes(result, allocator);
+        }
+        wasm_end_pathfinder(false);
+        std.log.debug("Total cost for this pathfind is {}.\n", .{lowest_total_cost});
     }
     pub fn deinit(self: *NodeMap, allocator: std.mem.Allocator) void {
         self.map.deinit(allocator);
