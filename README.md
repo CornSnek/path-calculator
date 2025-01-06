@@ -21,4 +21,7 @@ I'm not sure what the pathfinding algorithms are to solve this problem.
 For the Fog Island minigame, there is a mechanic where you can revisit a node or coordinate for a fixed cost of 5 coins.
 This makes finding algorithms to calculate the lowest coin cost trickier because part of a previous path is also considered to be the shortest to a targeted coordinate. Fog Island isn't necessarily a Travelling Salesperson Problem (TSP) due to this mechanic.
 
-For this reason, there's two pathfinding algorithms that can be used such as selecting the "Next Node is the Minimum Cost" or "Next Node has the Shortest Steps"
+For this reason, there's three pathfinding algorithms that can be used such as selecting the **Next Node is the Minimum Cost**, **Next Node has the Shortest Steps** or **Brute Forcing**
+
+## Projects Used
+**coi-serviceworker** (https://github.com/gzuidhof/coi-serviceworker) was added to this project to enable COOP and COEP headers for Github Pages
