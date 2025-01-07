@@ -1,5 +1,6 @@
 const std = @import("std");
 const nodes = @import("nodes.zig");
+const ProgressNumber = @import("ProgressNumber.zig");
 pub const std_options: std.Options = .{
     .logFn = @import("logger.zig").std_options_impl.logFn,
 };
@@ -66,12 +67,20 @@ pub fn main() !void {
     const allocator = GPA.allocator();
     var nmap = try nodes.NodeMap.init(allocator, ExampleMap4);
     defer nmap.deinit(allocator);
-    std.log.debug("\nLCN pathfind:\n", .{});
-    try nmap.mcn_path(allocator);
-    std.log.debug("\nSSN pathfind:\n", .{});
-    try nmap.ssn_path(allocator);
+    //std.log.debug("\nLCN pathfind:\n", .{});
+    //try nmap.mcn_path(allocator);
+    //std.log.debug("\nSSN pathfind:\n", .{});
+    //try nmap.ssn_path(allocator);
     std.log.debug("\nBruteforce pathfind:\n", .{});
     try nmap.brute_force_path(allocator);
+    var pn = try ProgressNumber.init(allocator, 0);
+    defer pn.deinit(allocator);
+    try pn.add_one(allocator);
+    std.debug.print("{[0]x:0>2} or {[0]}\n", .{pn});
+    for (1..10 + 1) |i| {
+        try pn.multiply(allocator, @intCast(i));
+        std.debug.print("{[0]x:0>2} or {[0]}\n", .{pn});
+    }
 }
 
 test "simple test" {

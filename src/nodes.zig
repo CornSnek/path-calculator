@@ -1,4 +1,6 @@
 const std = @import("std");
+const ProgressNumber = @import("ProgressNumber.zig");
+const UsingWasm = @import("builtin").os.tag == .freestanding;
 pub const Node = packed struct {
     visited: bool,
     cost: u31,
@@ -468,13 +470,13 @@ pub const NodeMap = struct {
     pub var PathfinderArrayList: std.ArrayListUnmanaged(u32) = .{};
     extern fn ParsePathfinder([*c]u32, usize, bool) void;
     fn wasm_start_pathfinder(allocator: std.mem.Allocator) !void {
-        if (@import("builtin").os.tag == .freestanding) {
+        if (UsingWasm) {
             PathfinderArrayList.clearRetainingCapacity();
             try PathfinderArrayList.appendSlice(allocator, &.{ 0, 0 }); //&.{Total cost of nodes, Total paths}
         }
     }
     fn wasm_append_path_bytes(shortest_path: PathResult, allocator: std.mem.Allocator) !void {
-        if (@import("builtin").os.tag == .freestanding) {
+        if (UsingWasm) {
             var path_bytes = std.ArrayList(u32).init(allocator);
             defer path_bytes.deinit();
             try path_bytes.append(6); //Total number of bytes to read for this path (6 for the bytes appended below excluding the for loop)
@@ -498,7 +500,7 @@ pub const NodeMap = struct {
         }
     }
     fn wasm_end_pathfinder(continue_disable: bool) void {
-        if (@import("builtin").os.tag == .freestanding) ParsePathfinder(PathfinderArrayList.items.ptr, PathfinderArrayList.items.len, continue_disable);
+        if (UsingWasm) ParsePathfinder(PathfinderArrayList.items.ptr, PathfinderArrayList.items.len, continue_disable);
     }
     ///Minimum Cost to node pathfinder
     pub fn mcn_path(self: NodeMap, allocator: std.mem.Allocator) !void {
@@ -680,11 +682,18 @@ pub const NodeMap = struct {
     extern fn CalculateBruteForceEarly() bool;
     extern fn GetOutput() bool;
     extern fn GetCancel() bool;
-    extern fn OutputBruteForcing([*c]const u8, usize) void;
+    extern fn OutputBruteForcing([*c]const u8, usize, [*c]const u8, usize, [*c]const u8, usize) void;
     pub fn brute_force_path(self: NodeMap, allocator: std.mem.Allocator) !void {
-        var sorted_coordinates = try self.coordinates.clone(allocator);
-        defer sorted_coordinates.deinit(allocator);
-        std.sort.block(Coordinate, sorted_coordinates.items, {}, Coordinate.block_sort_fn);
+        var permutations = try self.coordinates.clone(allocator);
+        defer permutations.deinit(allocator);
+        std.sort.block(Coordinate, permutations.items, {}, Coordinate.block_sort_fn);
+        var pn_total = if (UsingWasm) try ProgressNumber.init(allocator, 1);
+        defer if (UsingWasm) pn_total.deinit(allocator);
+        if (UsingWasm) {
+            for (0..permutations.items.len) |i|
+                try pn_total.multiply(allocator, @intCast(i + 1));
+        }
+        std.log.warn("{X:0<2}\n", .{pn_total});
         var lowest_results: std.ArrayListUnmanaged(PathResult) = .{};
         defer {
             for (lowest_results.items) |*res| {
@@ -695,20 +704,30 @@ pub const NodeMap = struct {
         var lowest_total_cost: u32 = std.math.maxInt(u32);
         var bfr: BFResults = .{};
         defer bfr.deinit(allocator);
-        var test_output: std.ArrayListUnmanaged(u8) = .{};
-        defer test_output.deinit(allocator);
-        while (!GetCancel()) {
-            var next_coordinates = try sorted_coordinates.clone(allocator);
+        var output_brute_forcing: std.ArrayListUnmanaged(u8) = .{};
+        defer output_brute_forcing.deinit(allocator);
+        var pn_now = if (UsingWasm) try ProgressNumber.init(allocator, 1);
+        defer if (UsingWasm) pn_now.deinit(allocator);
+        while (if (UsingWasm) !GetCancel() else true) {
+            var next_coordinates = try permutations.clone(allocator);
             defer next_coordinates.deinit(allocator);
-            if (@import("builtin").os.tag == .freestanding) {
+            if (UsingWasm) {
+                try pn_now.add_one(allocator);
                 if (GetOutput()) {
-                    for (next_coordinates.items) |c| {
-                        try test_output.writer(allocator).print("[{: >2},{: >2}] => ", .{ c.x, c.y });
-                    }
-                    test_output.items.len -= " => ".len;
-                    try test_output.writer(allocator).print("<br>Current Lowest Total Cost: {}. You can press 'Get Brute Force Path Early' to get a calculated path, but the lowest cost path may not be found yet.", .{lowest_total_cost});
-                    OutputBruteForcing(test_output.items.ptr, test_output.items.len);
-                    test_output.items.len = 0;
+                    try output_brute_forcing.writer(allocator).writeAll("You can press 'Get Brute Force Path Early' to get a calculated path, but the lowest cost path may not be found yet.<br>Calculating Coordinate Permutation: ");
+                    for (next_coordinates.items) |c| 
+                        try output_brute_forcing.writer(allocator).print("({: >2},{: >2}) &#x2192; ", .{ c.x, c.y });
+                    output_brute_forcing.items.len -= " &#x2192; ".len;
+                    try output_brute_forcing.writer(allocator).print("<br>Current lowest total cost found: {}", .{lowest_total_cost});
+                    OutputBruteForcing(
+                        output_brute_forcing.items.ptr,
+                        output_brute_forcing.items.len,
+                        pn_total.bytes.items.ptr,
+                        pn_total.bytes.items.len,
+                        pn_now.bytes.items.ptr,
+                        pn_now.bytes.items.len,
+                    );
+                    output_brute_forcing.items.len = 0;
                 }
             }
             const consecutive_num = bfr.remove_non_consecutive(next_coordinates.items, allocator);
@@ -753,7 +772,7 @@ pub const NodeMap = struct {
                 lowest_results.deinit(allocator);
                 lowest_results = possible_lowest_results;
             }
-            if (@import("builtin").os.tag == .freestanding) {
+            if (UsingWasm) {
                 if (CalculateBruteForceEarly()) {
                     try wasm_start_pathfinder(allocator);
                     for (lowest_results.items) |result| {
@@ -762,11 +781,11 @@ pub const NodeMap = struct {
                     wasm_end_pathfinder(true);
                 }
             }
-            if (!permutation_next(Coordinate, sorted_coordinates.items, {}, Coordinate.block_sort_fn)) break;
+            if (!permutation_next(Coordinate, permutations.items, {}, Coordinate.block_sort_fn)) break;
         }
-        if (@import("builtin").os.tag == .freestanding) {
+        if (UsingWasm) {
             const bfdesc = PathfindingType.brute_forcing.description();
-            OutputBruteForcing(bfdesc.ptr, bfdesc.len);
+            OutputBruteForcing(bfdesc.ptr, bfdesc.len, 0, 0, 0, 0);
         }
         try wasm_start_pathfinder(allocator);
         for (lowest_results.items) |result| {

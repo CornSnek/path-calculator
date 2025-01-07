@@ -139,17 +139,17 @@ async function init() {
       }
     }
   });
-  let number_of_tries=0;
-  function init_shared_buffer(){ //Check crossOriginIsolated before running
-    if(window.crossOriginIsolated){
+  let number_of_tries = 0;
+  function init_shared_buffer() { //Check crossOriginIsolated before running
+    if (window.crossOriginIsolated) {
       shared_buffer = new SharedArrayBuffer(3);
       shared_memory = new Uint8Array(shared_buffer);
       create_wasm_worker();
       generate_grid(null, new URL(window.location.href).searchParams.get("v"));
       generate_disable_state(false);
-    }else{
-      setTimeout(init_shared_buffer,1000);
-      if(number_of_tries++==3) window.location.reload();
+    } else {
+      setTimeout(init_shared_buffer, 500);
+      if (number_of_tries++ == 3) window.location.reload();
     }
   }
   init_shared_buffer();
@@ -697,8 +697,23 @@ function create_wasm_worker() {
     Atomics.store(shared_memory, offsets.cancel, 1);
   }
 }
-function OutputBruteForcing(str) {
+function bytes_to_big_num(bytes) {
+  let result = BigInt(0);
+  for (let i = bytes.length - 1; i >= 0; i--) {
+    result = (result << BigInt(8)) + BigInt(bytes[i]);
+  }
+  return result;
+}
+function OutputBruteForcing(str, pn_total, pn_now) {
   path_algorithm_description.innerHTML = str;
+  if (pn_total != null && pn_now != null) {
+    const progress = document.createElement("progress");
+    const percentage = Number(bytes_to_big_num(pn_now))/Number(bytes_to_big_num(pn_total));
+    progress.max = 1;
+    progress.value = percentage;
+    path_algorithm_description.innerHTML += `, Progress: ${(percentage*100).toFixed(2)}% `
+    path_algorithm_description.appendChild(progress);
+  }
 }
 let output_interval_i = null;
 function generate_disable_state(bool) {

@@ -20,8 +20,15 @@ function ParsePathfinder(pathfinder_ptr, pathfinder_len, disable_state) {
   postMessage(['f', "ParsePathfinder", new Uint32Array(PathfinderExports.memory.buffer, pathfinder_ptr, pathfinder_len)]);
   postMessage(['f', "generate_disable_state", disable_state]);
 }
-function OutputBruteForcing(str_ptr, str_len) {
-  postMessage(['f', "OutputBruteForcing", TD.decode(new Uint8Array(PathfinderExports.memory.buffer, str_ptr, str_len))]);
+function OutputBruteForcing(str_ptr, str_len, pn_total_ptr, pn_total_len, pn_now_ptr, pn_now_len) {
+  if (pn_total_ptr != 0 && pn_now_ptr != 0) {
+    postMessage(['f', "OutputBruteForcing", TD.decode(new Uint8Array(PathfinderExports.memory.buffer, str_ptr, str_len)),
+      new Uint8Array(PathfinderExports.memory.buffer, pn_total_ptr, pn_total_len),
+      new Uint8Array(PathfinderExports.memory.buffer, pn_now_ptr, pn_now_len),
+    ]);
+  } else {
+    postMessage(['f', "OutputBruteForcing", TD.decode(new Uint8Array(PathfinderExports.memory.buffer, str_ptr, str_len)), null, null]);
+  }
 }
 let shared_buffer;
 let shared_memory;
