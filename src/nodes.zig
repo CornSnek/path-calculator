@@ -165,6 +165,7 @@ pub const NodeMap = struct {
         lastd: Direction = .none,
         disabled: bool = false,
         cost: u32,
+        total_cost: u32,
     };
     const DijkstraStructMap = std.ArrayListUnmanaged(DijkstraStruct);
     /// Priority queue where the highest priority (as lowest cost) is popped first.
@@ -306,11 +307,13 @@ pub const NodeMap = struct {
                     try dijkstra_struct_map.append(allocator, .{
                         .thisc = .{ .x = @intCast(x), .y = @intCast(y) },
                         .cost = std.math.maxInt(u32),
+                        .total_cost  = std.math.maxInt(u32),
                     });
                 } else {
                     try dijkstra_struct_map.append(allocator, .{
                         .thisc = .{ .x = @intCast(x), .y = @intCast(y) },
                         .cost = 0,
+                        .total_cost  = 0,
                     });
                 }
             }
@@ -347,18 +350,20 @@ pub const NodeMap = struct {
                 if (dijkstra_struct_map.items[upper_coord.?.y * self.width + upper_coord.?.x].disabled) upper_coord = null;
             }
             //std.log.debug("t: {any} l: {any} r: {any} d: {any} u: {any}\n", .{ this_coord, left_coord, right_coord, lower_coord, upper_coord });
-            const tile_cost = dijkstra_struct_map.items[this_coord.y * self.width + this_coord.x].cost;
+            const tile_cost = dijkstra_struct_map.items[this_coord.y * self.width + this_coord.x].total_cost;
             std.debug.assert(tile_cost != std.math.maxInt(u32));
             if (left_coord != null) {
                 const left_tile_cost = dijkstra_struct_map.items[left_coord.?.y * self.width + left_coord.?.x].cost;
                 const left_node = self.map.items[left_coord.?.y * self.width + left_coord.?.x];
                 const left_vmap: bool = vmap.coord(self, left_coord.?.x, left_coord.?.y, false);
                 const left_new_cost: u32 = if (left_node.visited or left_vmap) self.revisit_cost else left_node.cost;
-                if (left_new_cost + tile_cost < left_tile_cost) {
-                    if (try map_pq.update(allocator, left_coord.?, dijkstra_struct_map.items[left_coord.?.y * self.width + left_coord.?.x].cost, left_new_cost) != .Success)
-                        try map_pq.add(allocator, left_coord.?, left_new_cost);
+                const left_new_total_cost: u32 = left_new_cost + tile_cost;
+                if (left_new_total_cost < left_tile_cost) {
+                    if (try map_pq.update(allocator, left_coord.?, dijkstra_struct_map.items[left_coord.?.y * self.width + left_coord.?.x].total_cost, left_new_total_cost) != .Success)
+                        try map_pq.add(allocator, left_coord.?, left_new_total_cost);
                     const left_ptr = &dijkstra_struct_map.items[left_coord.?.y * self.width + left_coord.?.x];
                     left_ptr.cost = left_new_cost;
+                    left_ptr.total_cost = left_new_total_cost;
                     left_ptr.lastc = this_coord;
                     left_ptr.lastd = .left;
                 }
@@ -368,27 +373,15 @@ pub const NodeMap = struct {
                 const right_node = self.map.items[right_coord.?.y * self.width + right_coord.?.x];
                 const right_vmap: bool = vmap.coord(self, right_coord.?.x, right_coord.?.y, false);
                 const right_new_cost: u32 = if (right_node.visited or right_vmap) self.revisit_cost else right_node.cost;
-                if (right_new_cost + tile_cost < right_tile_cost) {
-                    if (try map_pq.update(allocator, right_coord.?, dijkstra_struct_map.items[right_coord.?.y * self.width + right_coord.?.x].cost, right_new_cost) != .Success)
-                        try map_pq.add(allocator, right_coord.?, right_new_cost);
+                const right_new_total_cost: u32 = right_new_cost + tile_cost;
+                if (right_new_total_cost < right_tile_cost) {
+                    if (try map_pq.update(allocator, right_coord.?, dijkstra_struct_map.items[right_coord.?.y * self.width + right_coord.?.x].total_cost, right_new_total_cost) != .Success)
+                        try map_pq.add(allocator, right_coord.?, right_new_total_cost);
                     const right_ptr = &dijkstra_struct_map.items[right_coord.?.y * self.width + right_coord.?.x];
                     right_ptr.cost = right_new_cost;
+                    right_ptr.total_cost = right_new_total_cost;
                     right_ptr.lastc = this_coord;
                     right_ptr.lastd = .right;
-                }
-            }
-            if (lower_coord != null) {
-                const lower_tile_cost = dijkstra_struct_map.items[lower_coord.?.y * self.width + lower_coord.?.x].cost;
-                const lower_node = self.map.items[lower_coord.?.y * self.width + lower_coord.?.x];
-                const lower_vmap: bool = vmap.coord(self, lower_coord.?.x, lower_coord.?.y, false);
-                const lower_new_cost: u32 = if (lower_node.visited or lower_vmap) self.revisit_cost else lower_node.cost;
-                if (lower_new_cost + tile_cost < lower_tile_cost) {
-                    if (try map_pq.update(allocator, lower_coord.?, dijkstra_struct_map.items[lower_coord.?.y * self.width + lower_coord.?.x].cost, lower_new_cost) != .Success)
-                        try map_pq.add(allocator, lower_coord.?, lower_new_cost);
-                    const lower_ptr = &dijkstra_struct_map.items[lower_coord.?.y * self.width + lower_coord.?.x];
-                    lower_ptr.cost = lower_new_cost;
-                    lower_ptr.lastc = this_coord;
-                    lower_ptr.lastd = .down;
                 }
             }
             if (upper_coord != null) {
@@ -396,13 +389,31 @@ pub const NodeMap = struct {
                 const upper_node = self.map.items[upper_coord.?.y * self.width + upper_coord.?.x];
                 const upper_vmap: bool = vmap.coord(self, upper_coord.?.x, upper_coord.?.y, false);
                 const upper_new_cost: u32 = if (upper_node.visited or upper_vmap) self.revisit_cost else upper_node.cost;
-                if (upper_new_cost + tile_cost < upper_tile_cost) {
-                    if (try map_pq.update(allocator, upper_coord.?, dijkstra_struct_map.items[upper_coord.?.y * self.width + upper_coord.?.x].cost, upper_new_cost) != .Success)
-                        try map_pq.add(allocator, upper_coord.?, upper_new_cost);
+                const upper_new_total_cost: u32 = upper_new_cost + tile_cost;
+                if (upper_new_total_cost < upper_tile_cost) {
+                    if (try map_pq.update(allocator, upper_coord.?, dijkstra_struct_map.items[upper_coord.?.y * self.width + upper_coord.?.x].total_cost, upper_new_total_cost) != .Success)
+                        try map_pq.add(allocator, upper_coord.?, upper_new_total_cost);
                     const upper_ptr = &dijkstra_struct_map.items[upper_coord.?.y * self.width + upper_coord.?.x];
                     upper_ptr.cost = upper_new_cost;
+                    upper_ptr.total_cost = upper_new_total_cost;
                     upper_ptr.lastc = this_coord;
                     upper_ptr.lastd = .up;
+                }
+            }
+            if (lower_coord != null) {
+                const lower_tile_cost = dijkstra_struct_map.items[lower_coord.?.y * self.width + lower_coord.?.x].cost;
+                const lower_node = self.map.items[lower_coord.?.y * self.width + lower_coord.?.x];
+                const lower_vmap: bool = vmap.coord(self, lower_coord.?.x, lower_coord.?.y, false);
+                const lower_new_cost: u32 = if (lower_node.visited or lower_vmap) self.revisit_cost else lower_node.cost;
+                const lower_new_total_cost: u32 = lower_new_cost + tile_cost;
+                if (lower_new_total_cost < lower_tile_cost) {
+                    if (try map_pq.update(allocator, lower_coord.?, dijkstra_struct_map.items[lower_coord.?.y * self.width + lower_coord.?.x].total_cost, lower_new_total_cost) != .Success)
+                        try map_pq.add(allocator, lower_coord.?, lower_new_total_cost);
+                    const lower_ptr = &dijkstra_struct_map.items[lower_coord.?.y * self.width + lower_coord.?.x];
+                    lower_ptr.cost = lower_new_cost;
+                    lower_ptr.total_cost = lower_new_total_cost;
+                    lower_ptr.lastc = this_coord;
+                    lower_ptr.lastd = .down;
                 }
             }
         }
@@ -411,12 +422,10 @@ pub const NodeMap = struct {
         const cend_node = self.map.items[cend.y * self.width + cend.x];
         const cend_cost = if (cend_node.visited) self.revisit_cost else cend_node.cost;
         try optimal_path.append(allocator, .{ .coord = cend, .cost = cend_cost, .direction = dijkstra_struct_map.items[cend.y * self.width + cend.x].lastd });
-        var total_cost = dijkstra_struct_map.items[cend.y * self.width + cend.x].cost;
         var current_c: ?Coordinate = cend;
         while (current_c != null) {
             if (dijkstra_struct_map.items[current_c.?.y * self.width + current_c.?.x].lastc) |exists_c| {
                 const dijk_node = dijkstra_struct_map.items[exists_c.y * self.width + exists_c.x];
-                total_cost += dijk_node.cost;
                 try optimal_path.append(allocator, .{ .coord = exists_c, .cost = dijk_node.cost, .direction = dijk_node.lastd });
                 current_c = exists_c;
             } else current_c = null;
@@ -425,8 +434,7 @@ pub const NodeMap = struct {
         for (0..optimal_path.items.len / 2) |i| { //Reverse to get path
             std.mem.swap(NodeResult, &optimal_path.items[i], &optimal_path.items[optimal_path.items.len - 1 - i]);
         }
-        //std.log.debug("cost: {} path: {any}\n", .{ total_cost, optimal_path.items });
-        return .{ .cost = total_cost, .path = optimal_path };
+        return .{ .cost = dijkstra_struct_map.items[cend.y * self.width + cend.x].total_cost, .path = optimal_path };
     }
     fn u32_sort(_: void, lhs: u32, rhs: u32) bool {
         return lhs < rhs;
@@ -715,7 +723,7 @@ pub const NodeMap = struct {
                 try pn_now.add_one(allocator);
                 if (GetOutput()) {
                     try output_brute_forcing.writer(allocator).writeAll("You can press 'Get Brute Force Path Early' to get a calculated path, but the lowest cost path may not be found yet.<br>Calculating Coordinate Permutation: ");
-                    for (next_coordinates.items) |c| 
+                    for (next_coordinates.items) |c|
                         try output_brute_forcing.writer(allocator).print("({: >2},{: >2}) &#x2192; ", .{ c.x, c.y });
                     output_brute_forcing.items.len -= " &#x2192; ".len;
                     try output_brute_forcing.writer(allocator).print("<br>Current lowest total cost found: {}", .{lowest_total_cost});
