@@ -115,7 +115,9 @@ a {
 }
 
 .path-container {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, 75px);
+  width: 100%;
   vertical-align: middle;
   gap: 5px;
   border: 1px solid white;
@@ -139,11 +141,13 @@ a {
   background-color: green;
 }
 
-.path-coordinate.path-end {
+.path-coordinate.path-end,
+.path-coordinate.path-out-of-bounds {
   background-color: darkred;
 }
 
-.path-coordinate.highlight-path {
+.path-coordinate.highlight-path,
+.path-coordinate.custom-button {
   background-color: black;
 }
 
@@ -165,6 +169,11 @@ a {
 
 .unhighlight-coord {
   transition: background-color 0.5s ease, color 0.5s ease;
+}
+
+.chosen-direction {
+  background-color: greenyellow !important;
+  color: black !important;
 }
 
 #dummy-paths-section {

@@ -307,13 +307,13 @@ pub const NodeMap = struct {
                     try dijkstra_struct_map.append(allocator, .{
                         .thisc = .{ .x = @intCast(x), .y = @intCast(y) },
                         .cost = std.math.maxInt(u32),
-                        .total_cost  = std.math.maxInt(u32),
+                        .total_cost = std.math.maxInt(u32),
                     });
                 } else {
                     try dijkstra_struct_map.append(allocator, .{
                         .thisc = .{ .x = @intCast(x), .y = @intCast(y) },
                         .cost = 0,
-                        .total_cost  = 0,
+                        .total_cost = 0,
                     });
                 }
             }
@@ -468,7 +468,7 @@ pub const NodeMap = struct {
             return switch (self) {
                 .minimum_cost_node => "The least cost node is chosen first for each path.",
                 .shortest_steps_node => "The node with the shortest amount of steps is chosen first for each path.",
-                .brute_forcing => "Warning! Brute Forcing is extremely slow when selecting a large amount of coordinates, but this pathfinding guarantees the lowest cost.",
+                .brute_forcing => "Warning! Brute Forcing is extremely slow when selecting a large amount of coordinates, but this pathfinding gives the lowest cost out of the other pathfinders.",
             };
         }
     };

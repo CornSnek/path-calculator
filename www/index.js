@@ -31,6 +31,7 @@ let wasm_worker;
 let color1;
 let color2;
 let color3;
+let disable_grid = false;
 const NPSelect = "Click on a node to select it";
 const NPDeselect = "Click on node again or <em class=\"badge\">Esc</em> key to deselect it";
 function parse_as_positive_integer() {
@@ -244,6 +245,7 @@ function node_f_clear() {
   as_visited.onchange = null;
 }
 function node_f() {
+  if (disable_grid) return;
   const cr = as_column_row(this.i);
   if (last_div !== null) last_div.style.setProperty("background-color", color1);
   if (last_div !== this.div) {
@@ -541,6 +543,7 @@ class ColorCoordinate {
   }
 }
 function highlight_f() {
+  if (this.x < 0 || this.x >= num_rows || this.y < 0 || this.y >= num_columns) return; //Safeguard from ParsePathfinderCustom
   const grid_div = Array.from(grid_body.children)[this.y * num_columns + this.x];
   if (this.c !== null) grid_div.style.setProperty("--highlight-color", this.c);
   else grid_div.style.removeProperty("--highlight-color");
@@ -562,6 +565,7 @@ function highlight_all_f() {
   this.d.classList.remove("unhighlight-coord");
 }
 function unhighlight_f() {
+  if (this.x < 0 || this.x >= num_rows || this.y < 0 || this.y >= num_columns) return; //Safeguard from ParsePathfinderCustom
   const grid_div = Array.from(grid_body.children)[this.y * num_columns + this.x];
   this.d.classList.add("unhighlight-coord");
   this.d.classList.remove("highlight-coord");
@@ -579,6 +583,8 @@ function unhighlight_all_f() {
   this.d.classList.remove("highlight-coord");
 }
 function ParsePathfinder(pathfinder) {
+  pathfinder_custom = [];
+  let start_xy_once = true;
   create_paths_body.textContent = "";
   const node_divs = Array.from(grid_body.children);
   let offset = 2;
@@ -593,6 +599,11 @@ function ParsePathfinder(pathfinder) {
   total_div.appendChild(total_cost_div);
   total_cost_div.classList = "path-coordinate path-cost";
   total_cost_div.innerHTML = `Grand<br>Total<br>${total_cost}`;
+  const edit_custom_path_div = document.createElement("div");
+  total_div.appendChild(edit_custom_path_div);
+  edit_custom_path_div.classList = "path-coordinate";
+  edit_custom_path_div.innerHTML = "Edit<br>path";
+  edit_custom_path_div.onclick = ParsePathfinderCustom;
   create_paths_body.appendChild(document.createElement("br"));
   let visited_nodes = new Array(num_columns * num_rows);
   for (let i = 0; i < num_columns * num_rows; i++)
@@ -606,6 +617,11 @@ function ParsePathfinder(pathfinder) {
     const slice = pathfinder.slice(offset + 1, offset + 1 + bytes_read);
     const start_x = slice[0];
     const start_y = slice[1];
+    if (start_xy_once) {
+      pathfinder_custom.push(start_x);
+      pathfinder_custom.push(start_y);
+      start_xy_once = false;
+    }
     //const end_x = slice[2];
     //const end_y = slice[3];
     const path_cost = slice[4];
@@ -635,6 +651,7 @@ function ParsePathfinder(pathfinder) {
     for (let d = 0; d < directions_read; d++) {
       const node_cost = slice[6 + 2 * d];
       const direction = slice[6 + 2 * d + 1];
+      pathfinder_custom.push(direction);
       const direction_name = Direction.$$names[direction];
       switch (direction) {
         case Direction.left: coord_x -= 1; break;
@@ -649,13 +666,12 @@ function ParsePathfinder(pathfinder) {
         const node_color = !visited_nodes[coord_y * num_columns + coord_x] ? null : "blue";
         direction_div.onmouseenter = highlight_f.bind({ x: coord_x, y: coord_y, d: direction_div, c: node_color });
         all_node_colors.push(new ColorCoordinate(new Coordinate(coord_x, coord_y), node_color));
-        visited_nodes_clone[coord_y * num_columns + coord_x] = true;
       } else {
         direction_div.classList = "path-coordinate path-arrow path-end";
         direction_div.onmouseenter = highlight_f.bind({ x: coord_x, y: coord_y, d: direction_div, c: "red" });
         all_node_colors.push(new ColorCoordinate(new Coordinate(coord_x, coord_y), "red"));
-        visited_nodes_clone[coord_y * num_columns + coord_x] = true;
       }
+      visited_nodes_clone[coord_y * num_columns + coord_x] = true;
       running_total += node_cost;
       direction_div.innerHTML = `${coord_x}, ${coord_y}<br>${node_cost}${visited_nodes[coord_y * num_columns + coord_x] ? "<em class=\"badge visited\">V</em>" : ""}<br><b>${running_total}</b>`;
       direction_div.onmouseleave = unhighlight_f.bind({ x: coord_x, y: coord_y, d: direction_div });
@@ -666,6 +682,184 @@ function ParsePathfinder(pathfinder) {
     create_paths_body.appendChild(document.createElement("br"));
     offset += bytes_read + 1;
   }
+  pathfinder_custom_restore = [...pathfinder_custom];
+}
+function key_b(key) {
+  return `<em class="badge">${key}</em>`
+}
+let pathfinder_custom_restore = null; //Backup copy to undo
+let pathfinder_custom = null;
+function highlight_div_f() {
+  this.div.classList.add("highlight-coord");
+  this.div.classList.remove("unhighlight-coord");
+}
+function unhighlight_div_f() {
+  this.div.classList.add("unhighlight-coord");
+  this.div.classList.remove("highlight-coord");
+}
+//Format bytes is {start_x,start_y,DirectionEnums}
+function ParsePathfinderCustom() {
+  path_algorithm_description.innerHTML = `You can edit a direction by clicking it and using ${key_b("&rarr;")}${key_b("&larr;")}${key_b("&uarr;")}${key_b("&darr;")}. You can insert and delete a direction using ${key_b('Insert')} and ${key_b('Delete')}. ${key_b('Escape')} to cancel. If any direction leads outside the grid, the Grand Total will not be calculated.`;
+  node_f_clear();
+  disable_buttons(true);
+  let visited_nodes = new Array(num_columns * num_rows);
+  for (let i = 0; i < num_columns * num_rows; i++)
+    visited_nodes[i] = node_array[i].visited;
+  create_paths_body.textContent = "";
+  let coord_now = new Coordinate(pathfinder_custom[0], pathfinder_custom[1]);
+  const paths_container = document.createElement("div");
+  create_paths_body.appendChild(paths_container);
+  paths_container.classList = "path-container";
+  const exit_custom_path_div = document.createElement("div");
+  paths_container.appendChild(exit_custom_path_div);
+  exit_custom_path_div.classList = "path-coordinate custom-button";
+  exit_custom_path_div.innerHTML = "Exit";
+  exit_custom_path_div.onmouseenter = highlight_div_f.bind({ div: exit_custom_path_div });
+  exit_custom_path_div.onmouseleave = unhighlight_div_f.bind({ div: exit_custom_path_div });
+  exit_custom_path_div.onclick = () => {
+    disable_buttons(false);
+    create_paths_body.textContent = "";
+    path_algorithm_description.textContent = PathfindingType.$description[parseInt(path_algorithm.value)];
+  };
+  const restore_custom_path_div = document.createElement("div");
+  paths_container.appendChild(restore_custom_path_div);
+  restore_custom_path_div.classList = "path-coordinate custom-button";
+  restore_custom_path_div.innerHTML = "Restore<br>custom<br>path";
+  restore_custom_path_div.onmouseenter = highlight_div_f.bind({ div: restore_custom_path_div });
+  restore_custom_path_div.onmouseleave = unhighlight_div_f.bind({ div: restore_custom_path_div });
+  restore_custom_path_div.onclick = () => {
+    pathfinder_custom=[...pathfinder_custom_restore];
+    ParsePathfinderCustom();
+  };
+  const total_cost_div = document.createElement("div");
+  paths_container.appendChild(total_cost_div);
+  total_cost_div.classList = "path-coordinate path-cost";
+  const start_div = document.createElement("div");
+  paths_container.appendChild(start_div);
+  start_div.classList = "path-coordinate path-start";
+  start_div.innerHTML = `${pathfinder_custom[0]}, ${pathfinder_custom[1]}<br>Start`;
+  start_div.onmouseenter = highlight_f.bind({ x: pathfinder_custom[0], y: pathfinder_custom[1], d: start_div, c: "green" });
+  start_div.onmouseleave = unhighlight_f.bind({ x: pathfinder_custom[0], y: pathfinder_custom[1], d: start_div });
+  var running_total = 0;
+  const rev_cost = parseInt(revisited_node_cost.value);
+  let did_oob = false;
+  for (let i = 2; i < pathfinder_custom.length; i++) {
+    const direction = pathfinder_custom[i];
+    const direction_name = Direction.$$names[direction];
+    switch (direction) {
+      case Direction.left:
+        coord_now.x -= 1;
+        break;
+      case Direction.right:
+        coord_now.x += 1;
+        break;
+      case Direction.up:
+        coord_now.y -= 1;
+        break;
+      case Direction.down:
+        coord_now.y += 1;
+        break;
+    }
+    const direction_div = document.createElement("div");
+    paths_container.appendChild(direction_div);
+    direction_div.classList = "path-coordinate path-arrow";
+    if (!did_oob && coord_now.x >= 0 && coord_now.x < num_rows && coord_now.y >= 0 && coord_now.y < num_columns) {
+      const visited = visited_nodes[coord_now.y * num_columns + coord_now.x];
+      const node_cost = !visited ? node_array[coord_now.y * num_columns + coord_now.x].cost : rev_cost;
+      running_total += node_cost;
+      const node_color = !visited ? null : "blue";
+      direction_div.innerHTML = `${coord_now.x}, ${coord_now.y}<br>${node_cost}${visited ? "<em class=\"badge visited\">V</em>" : ""}<br><b>${running_total}</b>`;
+      direction_div.onmouseenter = highlight_f.bind({ x: coord_now.x, y: coord_now.y, d: direction_div, c: node_color });
+      direction_div.onmouseleave = unhighlight_f.bind({ x: coord_now.x, y: coord_now.y, d: direction_div });
+      direction_div.onclick = custom_direction_div_f.bind({ i, x: coord_now.x, y: coord_now.y, d: direction_div });
+      direction_div.style = `background-image: url(images/${direction_name}.png);`;
+      visited_nodes[coord_now.y * num_columns + coord_now.x] = true
+    } else {
+      direction_div.classList.add("path-out-of-bounds");
+      direction_div.innerHTML = `${coord_now.x}, ${coord_now.y}<br>Error:<br>Out of Bounds!`
+      direction_div.onclick = custom_direction_div_f.bind({ i, x: coord_now.x, y: coord_now.y, d: direction_div });
+      direction_div.style = `background-image: url(images/${direction_name}.png);`;
+      did_oob = true;
+    }
+  }
+  if (!did_oob) {
+    total_cost_div.innerHTML = `Grand<br>Total<br>${running_total}`;
+  } else {
+    total_cost_div.innerHTML = `Error:<br>Out of bounds!`;
+  }
+  const add_div = document.createElement("div");
+  paths_container.appendChild(add_div);
+  add_div.classList = "path-coordinate custom-button";
+  add_div.innerHTML = "Insert<br>Direction";
+  add_div.onmouseenter = highlight_div_f.bind({ div: add_div });
+  add_div.onmouseleave = unhighlight_div_f.bind({ div: add_div });
+  add_div.onclick = () => {
+    pathfinder_custom.push(Direction.right);
+    ParsePathfinderCustom();
+  };
+}
+let last_selected_dir_div = null;
+function custom_direction_div_f() {
+  if (last_selected_dir_div != null) last_selected_dir_div.classList.remove("chosen-direction");
+  last_selected_dir_div = this.d;
+  this.d.classList.add("chosen-direction");
+  event_map.clear();
+  const right_f = e => {
+    e.preventDefault();
+    pathfinder_custom[this.i] = Direction.right;
+    unhighlight_f.bind({ x: this.x, y: this.y, d: this.d })();
+    last_selected_dir_div = null;
+    ParsePathfinderCustom();
+  };
+  const left_f = e => {
+    e.preventDefault();
+    pathfinder_custom[this.i] = Direction.left;
+    unhighlight_f.bind({ x: this.x, y: this.y, d: this.d })();
+    last_selected_dir_div = null;
+    ParsePathfinderCustom();
+  };
+  const up_f = e => {
+    e.preventDefault();
+    pathfinder_custom[this.i] = Direction.up;
+    unhighlight_f.bind({ x: this.x, y: this.y, d: this.d })();
+    last_selected_dir_div = null;
+    ParsePathfinderCustom();
+  };
+  const down_f = e => {
+    e.preventDefault();
+    pathfinder_custom[this.i] = Direction.down;
+    unhighlight_f.bind({ x: this.x, y: this.y, d: this.d })();
+    last_selected_dir_div = null;
+    ParsePathfinderCustom();
+  };
+  const insert_f = e => {
+    e.preventDefault();
+    pathfinder_custom.splice(this.i, 0, pathfinder_custom[this.i]);
+    unhighlight_f.bind({ x: this.x, y: this.y, d: this.d })();
+    last_selected_dir_div = null;
+    ParsePathfinderCustom();
+  };
+  const delete_f = e => {
+    e.preventDefault();
+    pathfinder_custom.splice(this.i, 1);
+    unhighlight_f.bind({ x: this.x, y: this.y, d: this.d })();
+    last_selected_dir_div = null;
+    ParsePathfinderCustom();
+  };
+  const deselect_f = e => {
+    e.preventDefault();
+    unhighlight_f.bind({ x: this.x, y: this.y, d: this.d })();
+    this.d.classList.remove("chosen-direction");
+    last_selected_dir_div = null;
+    event_map.clear();
+  };
+  event_map.set('Insert', insert_f);
+  event_map.set('Delete', delete_f);
+  event_map.set('ArrowRight', right_f);
+  event_map.set('ArrowLeft', left_f);
+  event_map.set('ArrowDown', down_f);
+  event_map.set('ArrowUp', up_f);
+  event_map.set('Escape', deselect_f);
 }
 
 const worker_handler_module = {
@@ -708,15 +902,15 @@ function OutputBruteForcing(str, pn_total, pn_now) {
   path_algorithm_description.innerHTML = str;
   if (pn_total != null && pn_now != null) {
     const progress = document.createElement("progress");
-    const percentage = Number(bytes_to_big_num(pn_now))/Number(bytes_to_big_num(pn_total));
+    const percentage = Number(bytes_to_big_num(pn_now)) / Number(bytes_to_big_num(pn_total));
     progress.max = 1;
     progress.value = percentage;
-    path_algorithm_description.innerHTML += `, Progress: ${(percentage*100).toFixed(2)}% `
+    path_algorithm_description.innerHTML += `, Progress: ${(percentage * 100).toFixed(2)}% `
     path_algorithm_description.appendChild(progress);
   }
 }
 let output_interval_i = null;
-function generate_disable_state(bool) {
+function disable_buttons(bool) {
   revisited_node_cost.disabled = bool;
   default_node_cost.disabled = bool;
   columns_num_input.disabled = bool;
@@ -727,6 +921,10 @@ function generate_disable_state(bool) {
   generate_grid_random_button.disabled = bool;
   generate_paths.disabled = bool;
   path_algorithm.disabled = bool;
+  disable_grid = bool;
+}
+function generate_disable_state(bool) {
+  disable_buttons(bool);
   generate_brute_force_early.disabled = !bool;
   cancel_brute_force.disabled = !bool;
   if (bool) {
