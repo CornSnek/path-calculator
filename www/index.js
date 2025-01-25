@@ -582,8 +582,10 @@ function unhighlight_all_f() {
   this.d.classList.add("unhighlight-coord");
   this.d.classList.remove("highlight-coord");
 }
-function ParsePathfinder(pathfinder) {
-  pathfinder_custom = [];
+async function ParsePathfinder(obj) {
+  const still_running = obj.s;
+  const pathfinder = obj.a;
+  if (!still_running) pathfinder_custom = [];
   let start_xy_once = true;
   create_paths_body.textContent = "";
   const node_divs = Array.from(grid_body.children);
@@ -602,8 +604,8 @@ function ParsePathfinder(pathfinder) {
   const edit_custom_path_div = document.createElement("div");
   total_div.appendChild(edit_custom_path_div);
   edit_custom_path_div.classList = "path-coordinate";
-  edit_custom_path_div.innerHTML = "Edit<br>path";
-  edit_custom_path_div.onclick = ParsePathfinderCustom;
+  edit_custom_path_div.innerHTML = `Edit<br>path${still_running?"<br>(Disabled)":""}`;
+  if (!still_running)  edit_custom_path_div.onclick = ParsePathfinderCustom;
   create_paths_body.appendChild(document.createElement("br"));
   let visited_nodes = new Array(num_columns * num_rows);
   for (let i = 0; i < num_columns * num_rows; i++)
@@ -617,10 +619,12 @@ function ParsePathfinder(pathfinder) {
     const slice = pathfinder.slice(offset + 1, offset + 1 + bytes_read);
     const start_x = slice[0];
     const start_y = slice[1];
-    if (start_xy_once) {
-      pathfinder_custom.push(start_x);
-      pathfinder_custom.push(start_y);
-      start_xy_once = false;
+    if (!still_running) {
+      if (start_xy_once) {
+        pathfinder_custom.push(start_x);
+        pathfinder_custom.push(start_y);
+        start_xy_once = false;
+      }
     }
     //const end_x = slice[2];
     //const end_y = slice[3];
@@ -651,7 +655,7 @@ function ParsePathfinder(pathfinder) {
     for (let d = 0; d < directions_read; d++) {
       const node_cost = slice[6 + 2 * d];
       const direction = slice[6 + 2 * d + 1];
-      pathfinder_custom.push(direction);
+      if (!still_running) pathfinder_custom.push(direction);
       const direction_name = Direction.$$names[direction];
       switch (direction) {
         case Direction.left: coord_x -= 1; break;
@@ -682,7 +686,7 @@ function ParsePathfinder(pathfinder) {
     create_paths_body.appendChild(document.createElement("br"));
     offset += bytes_read + 1;
   }
-  pathfinder_custom_restore = [...pathfinder_custom];
+  if (!still_running) pathfinder_custom_restore = [...pathfinder_custom];
 }
 function key_b(key) {
   return `<em class="badge">${key}</em>`
@@ -728,7 +732,7 @@ function ParsePathfinderCustom() {
   restore_custom_path_div.onmouseenter = highlight_div_f.bind({ div: restore_custom_path_div });
   restore_custom_path_div.onmouseleave = unhighlight_div_f.bind({ div: restore_custom_path_div });
   restore_custom_path_div.onclick = () => {
-    pathfinder_custom=[...pathfinder_custom_restore];
+    pathfinder_custom = [...pathfinder_custom_restore];
     ParsePathfinderCustom();
   };
   const total_cost_div = document.createElement("div");

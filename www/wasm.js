@@ -17,7 +17,7 @@ function FindPath(query_str, path_algorithm_value) {
 }
 function ParsePathfinder(pathfinder_ptr, pathfinder_len, disable_state) {
   PathfinderExports.FlushPrint();
-  postMessage(['f', "ParsePathfinder", new Uint32Array(PathfinderExports.memory.buffer, pathfinder_ptr, pathfinder_len)]);
+  postMessage(['f', "ParsePathfinder", {s:disable_state, a:new Uint32Array(PathfinderExports.memory.buffer, pathfinder_ptr, pathfinder_len)}]);
   postMessage(['f', "generate_disable_state", disable_state]);
 }
 function OutputBruteForcing(str_ptr, str_len, pn_total_ptr, pn_total_len, pn_now_ptr, pn_now_len) {
