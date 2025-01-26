@@ -58,7 +58,7 @@ pub export fn FlushPrint() void {
     if (wasm_printer.pos != 0) JSPrint(&wasm_printer.buf[0], wasm_printer.pos, wasm_printer.init_type orelse .log);
     wasm_printer.reset();
 }
-pub const PrintType = @import("shared_enums.zig").PrintType;
+pub const PrintType = @import("shared.zig").PrintType;
 const WasmPrinter = struct {
     const WriteError = error{ NeedsFlush, Truncate };
     const Writer = std.io.Writer(*WasmPrinter, WasmPrinter.WriteError, WasmPrinter.write);

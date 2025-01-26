@@ -1,4 +1,4 @@
-import { Direction, PathfindingType, PrintType } from './wasm_enums_to_js.js'
+import { Direction, PathfindingType, PrintType } from './wasm_to_js.js'
 let revisited_node_cost;
 let default_node_cost;
 let error_body;
@@ -585,7 +585,10 @@ function unhighlight_all_f() {
 async function ParsePathfinder(obj) {
   const still_running = obj.s;
   const pathfinder = obj.a;
-  if (!still_running) pathfinder_custom = [];
+  if (!still_running) {
+    pathfinder_custom = [];
+    coordinates_used = [];
+  }
   let start_xy_once = true;
   create_paths_body.textContent = "";
   const node_divs = Array.from(grid_body.children);
@@ -599,13 +602,13 @@ async function ParsePathfinder(obj) {
   total_div.className = "path-container";
   const total_cost_div = document.createElement("div");
   total_div.appendChild(total_cost_div);
-  total_cost_div.classList = "path-coordinate path-cost";
+  total_cost_div.classList = "square-button path-cost";
   total_cost_div.innerHTML = `Grand<br>Total<br>${total_cost}`;
   const edit_custom_path_div = document.createElement("div");
   total_div.appendChild(edit_custom_path_div);
-  edit_custom_path_div.classList = "path-coordinate";
-  edit_custom_path_div.innerHTML = `Edit<br>path${still_running?"<br>(Disabled)":""}`;
-  if (!still_running)  edit_custom_path_div.onclick = ParsePathfinderCustom;
+  edit_custom_path_div.classList = "square-button";
+  edit_custom_path_div.innerHTML = `Edit<br>path${still_running ? "<br>(Disabled)" : ""}`;
+  if (!still_running) edit_custom_path_div.onclick = ParsePathfinderCustom;
   create_paths_body.appendChild(document.createElement("br"));
   let visited_nodes = new Array(num_columns * num_rows);
   for (let i = 0; i < num_columns * num_rows; i++)
@@ -625,23 +628,22 @@ async function ParsePathfinder(obj) {
         pathfinder_custom.push(start_y);
         start_xy_once = false;
       }
+      coordinates_used.push(new Coordinate(slice[2], slice[3]));
     }
-    //const end_x = slice[2];
-    //const end_y = slice[3];
     const path_cost = slice[4];
     const directions_read = slice[5];
     const path_cost_div = document.createElement("div");
     paths_div.appendChild(path_cost_div);
-    path_cost_div.classList = "path-coordinate path-cost";
+    path_cost_div.classList = "square-button path-cost";
     path_running_total += path_cost;
     path_cost_div.innerHTML = `Path<br>Total<br>${path_cost}<br><b>${path_running_total}</b>`;
     const highlight_paths_div = document.createElement("div");
     paths_div.appendChild(highlight_paths_div);
-    highlight_paths_div.classList = "path-coordinate highlight-path";
+    highlight_paths_div.classList = "square-button highlight-path";
     highlight_paths_div.innerHTML = `Highlight Path<br>${i + 1}/${total_paths}`;
     const start_div = document.createElement("div");
     paths_div.appendChild(start_div);
-    start_div.classList = "path-coordinate path-start";
+    start_div.classList = "square-button path-start";
     start_div.innerHTML = `${start_x}, ${start_y}<br>Start`;
     start_div.onmouseenter = highlight_f.bind({ x: start_x, y: start_y, d: start_div, c: "green" });
     start_div.onmouseleave = unhighlight_f.bind({ x: start_x, y: start_y, d: start_div });
@@ -666,12 +668,12 @@ async function ParsePathfinder(obj) {
       const direction_div = document.createElement("div");
       paths_div.appendChild(direction_div);
       if (d != directions_read - 1) {
-        direction_div.classList = "path-coordinate path-arrow";
+        direction_div.classList = "square-button path-arrow";
         const node_color = !visited_nodes[coord_y * num_columns + coord_x] ? null : "blue";
         direction_div.onmouseenter = highlight_f.bind({ x: coord_x, y: coord_y, d: direction_div, c: node_color });
         all_node_colors.push(new ColorCoordinate(new Coordinate(coord_x, coord_y), node_color));
       } else {
-        direction_div.classList = "path-coordinate path-arrow path-end";
+        direction_div.classList = "square-button path-arrow path-end";
         direction_div.onmouseenter = highlight_f.bind({ x: coord_x, y: coord_y, d: direction_div, c: "red" });
         all_node_colors.push(new ColorCoordinate(new Coordinate(coord_x, coord_y), "red"));
       }
@@ -693,6 +695,7 @@ function key_b(key) {
 }
 let pathfinder_custom_restore = null; //Backup copy to undo
 let pathfinder_custom = null;
+let coordinates_used = null;
 function highlight_div_f() {
   this.div.classList.add("highlight-coord");
   this.div.classList.remove("unhighlight-coord");
@@ -710,37 +713,41 @@ function ParsePathfinderCustom() {
   for (let i = 0; i < num_columns * num_rows; i++)
     visited_nodes[i] = node_array[i].visited;
   create_paths_body.textContent = "";
+  let coordinates_used_cpy = [...coordinates_used];
   let coord_now = new Coordinate(pathfinder_custom[0], pathfinder_custom[1]);
   const paths_container = document.createElement("div");
   create_paths_body.appendChild(paths_container);
   paths_container.classList = "path-container";
-  const exit_custom_path_div = document.createElement("div");
-  paths_container.appendChild(exit_custom_path_div);
-  exit_custom_path_div.classList = "path-coordinate custom-button";
-  exit_custom_path_div.innerHTML = "Exit";
-  exit_custom_path_div.onmouseenter = highlight_div_f.bind({ div: exit_custom_path_div });
-  exit_custom_path_div.onmouseleave = unhighlight_div_f.bind({ div: exit_custom_path_div });
-  exit_custom_path_div.onclick = () => {
+  const remove_path_div = document.createElement("div");
+  paths_container.appendChild(remove_path_div);
+  remove_path_div.classList = "square-button custom-button";
+  remove_path_div.innerHTML = "Remove<br>all";
+  remove_path_div.onmouseenter = highlight_div_f.bind({ div: remove_path_div });
+  remove_path_div.onmouseleave = unhighlight_div_f.bind({ div: remove_path_div });
+  remove_path_div.onclick = () => {
     disable_buttons(false);
     create_paths_body.textContent = "";
     path_algorithm_description.textContent = PathfindingType.$description[parseInt(path_algorithm.value)];
   };
-  const restore_custom_path_div = document.createElement("div");
-  paths_container.appendChild(restore_custom_path_div);
-  restore_custom_path_div.classList = "path-coordinate custom-button";
-  restore_custom_path_div.innerHTML = "Restore<br>custom<br>path";
-  restore_custom_path_div.onmouseenter = highlight_div_f.bind({ div: restore_custom_path_div });
-  restore_custom_path_div.onmouseleave = unhighlight_div_f.bind({ div: restore_custom_path_div });
-  restore_custom_path_div.onclick = () => {
+  const restore_path_div = document.createElement("div");
+  paths_container.appendChild(restore_path_div);
+  restore_path_div.classList = "square-button custom-button";
+  restore_path_div.innerHTML = "Restore<br>path";
+  restore_path_div.onmouseenter = highlight_div_f.bind({ div: restore_path_div });
+  restore_path_div.onmouseleave = unhighlight_div_f.bind({ div: restore_path_div });
+  restore_path_div.onclick = () => {
     pathfinder_custom = [...pathfinder_custom_restore];
     ParsePathfinderCustom();
   };
   const total_cost_div = document.createElement("div");
   paths_container.appendChild(total_cost_div);
-  total_cost_div.classList = "path-coordinate path-cost";
+  total_cost_div.classList = "square-button path-cost";
+  const total_paths_div = document.createElement("div");
+  paths_container.appendChild(total_paths_div);
+  total_paths_div.classList = "square-button";
   const start_div = document.createElement("div");
   paths_container.appendChild(start_div);
-  start_div.classList = "path-coordinate path-start";
+  start_div.classList = "square-button path-start";
   start_div.innerHTML = `${pathfinder_custom[0]}, ${pathfinder_custom[1]}<br>Start`;
   start_div.onmouseenter = highlight_f.bind({ x: pathfinder_custom[0], y: pathfinder_custom[1], d: start_div, c: "green" });
   start_div.onmouseleave = unhighlight_f.bind({ x: pathfinder_custom[0], y: pathfinder_custom[1], d: start_div });
@@ -766,20 +773,30 @@ function ParsePathfinderCustom() {
     }
     const direction_div = document.createElement("div");
     paths_container.appendChild(direction_div);
-    direction_div.classList = "path-coordinate path-arrow";
+    direction_div.classList = "square-button path-arrow";
     if (!did_oob && coord_now.x >= 0 && coord_now.x < num_rows && coord_now.y >= 0 && coord_now.y < num_columns) {
       const visited = visited_nodes[coord_now.y * num_columns + coord_now.x];
       const node_cost = !visited ? node_array[coord_now.y * num_columns + coord_now.x].cost : rev_cost;
+      var is_marked = false;
+      for (let j = 0; j < coordinates_used_cpy.length; j++) {
+        const cmp_coord = coordinates_used_cpy[j];
+        if (coord_now.x == cmp_coord.x && coord_now.y == cmp_coord.y) {
+          is_marked = true;
+          direction_div.classList.add("path-mark");
+          coordinates_used_cpy.splice(j, 1);
+          break;
+        }
+      }
       running_total += node_cost;
-      const node_color = !visited ? null : "blue";
-      direction_div.innerHTML = `${coord_now.x}, ${coord_now.y}<br>${node_cost}${visited ? "<em class=\"badge visited\">V</em>" : ""}<br><b>${running_total}</b>`;
+      const node_color = !is_marked ? (!visited ? null : "blue") : "darkred";
+      direction_div.innerHTML = `${coord_now.x}, ${coord_now.y}<br>${node_cost}${visited ? `<em class="badge visited">V</em>` : ""}${is_marked ? `<em class="badge mark">M</em>` : ""}<br><b>${running_total}</b>`;
       direction_div.onmouseenter = highlight_f.bind({ x: coord_now.x, y: coord_now.y, d: direction_div, c: node_color });
       direction_div.onmouseleave = unhighlight_f.bind({ x: coord_now.x, y: coord_now.y, d: direction_div });
       direction_div.onclick = custom_direction_div_f.bind({ i, x: coord_now.x, y: coord_now.y, d: direction_div });
       direction_div.style = `background-image: url(images/${direction_name}.png);`;
       visited_nodes[coord_now.y * num_columns + coord_now.x] = true
     } else {
-      direction_div.classList.add("path-out-of-bounds");
+      direction_div.classList.add("path-error");
       direction_div.innerHTML = `${coord_now.x}, ${coord_now.y}<br>Error:<br>Out of Bounds!`
       direction_div.onclick = custom_direction_div_f.bind({ i, x: coord_now.x, y: coord_now.y, d: direction_div });
       direction_div.style = `background-image: url(images/${direction_name}.png);`;
@@ -791,9 +808,15 @@ function ParsePathfinderCustom() {
   } else {
     total_cost_div.innerHTML = `Error:<br>Out of bounds!`;
   }
+  total_paths_div.innerHTML = `${coordinates_used.length-coordinates_used_cpy.length}/${coordinates_used.length}<br><em class="badge mark">M</em><br>visited`
+  if(coordinates_used_cpy.length!=0){
+    total_paths_div.classList.add("path-error");
+  }else{
+    total_paths_div.classList.add("path-ok");
+  }
   const add_div = document.createElement("div");
   paths_container.appendChild(add_div);
-  add_div.classList = "path-coordinate custom-button";
+  add_div.classList = "square-button custom-button";
   add_div.innerHTML = "Insert<br>Direction";
   add_div.onmouseenter = highlight_div_f.bind({ div: add_div });
   add_div.onmouseleave = unhighlight_div_f.bind({ div: add_div });

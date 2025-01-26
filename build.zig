@@ -1,29 +1,41 @@
 const std = @import("std");
-fn EnumsToJSClass(EnumClass: anytype, export_name: []const u8) []const u8 {
+fn EnumsToJSClass(EnumClass: anytype, comptime export_name: []const u8) []const u8 {
     if (@typeInfo(EnumClass) != .Enum) @compileError(@typeName(EnumClass) ++ " must be an enum type.");
-    var export_str: []const u8 = &.{};
+    comptime var export_str: []const u8 = &.{};
     export_str = export_str ++ std.fmt.comptimePrint("//Exported Zig enums '{s}' to javascript variable name '{s}'\n", .{ @typeName(EnumClass), export_name });
     export_str = export_str ++ "export class " ++ export_name ++ " {\n";
     const fields = std.meta.fields(EnumClass);
-    for (fields) |field|
+    inline for (fields) |field|
         export_str = export_str ++ std.fmt.comptimePrint("\tstatic get {s}() {{ return {}; }}\n", .{ field.name, field.value });
     export_str = export_str ++ std.fmt.comptimePrint("\tstatic get $$length() {{ return {}; }}\n", .{fields.len});
     export_str = export_str ++ "\tstatic get $$names() { return Array.from([";
-    for (fields) |field|
+    inline for (fields) |field|
         export_str = export_str ++ std.fmt.comptimePrint(" \"{s}\",", .{field.name});
     export_str = export_str ++ " ]); }\n";
-    for (@typeInfo(EnumClass).Enum.decls) |decl| { //Get string descriptions of enums.
+    inline for (@typeInfo(EnumClass).Enum.decls) |decl| { //Get string descriptions of enums.
         const DeclType = @TypeOf(@field(EnumClass, decl.name));
         if (@typeInfo(DeclType) == .Fn) {
             const FnInfo = @typeInfo(DeclType).Fn;
             if (FnInfo.return_type == []const u8 and FnInfo.params.len == 1 and FnInfo.params[0].type == EnumClass) {
                 export_str = export_str ++ "\tstatic get $" ++ decl.name ++ "() { return Array.from([";
-                for (fields) |field|
+                inline for (fields) |field|
                     export_str = export_str ++ std.fmt.comptimePrint(" \"{s}\",", .{@field(EnumClass, decl.name)(@enumFromInt(field.value))});
                 export_str = export_str ++ " ]); }\n";
             }
         }
     }
+    export_str = export_str ++ "};\n\n";
+    return export_str;
+}
+fn StructToOffsetSizeInfo(StructClass: anytype, comptime export_name: []const u8) []const u8 {
+    if (@typeInfo(StructClass) != .Struct) @compileError(@typeName(StructClass) ++ " must be an struct type.");
+    comptime var export_str: []const u8 = &.{};
+    export_str = export_str ++ std.fmt.comptimePrint("//Exported Struct '{s}' to javascript variable name '{s}'\n", .{ @typeName(StructClass), export_name });
+    export_str = export_str ++ "export class " ++ export_name ++ " {\n";
+    const fields = std.meta.fields(StructClass);
+    inline for (fields) |field|
+        export_str = export_str ++ std.fmt.comptimePrint("\tstatic get {s}() {{ return {}; }}\n", .{ field.name, @offsetOf(StructClass, field.name) });
+    export_str = export_str ++ std.fmt.comptimePrint("\tstatic get $$length() {{ return {}; }}\n", .{@sizeOf(StructClass)});
     export_str = export_str ++ "};\n\n";
     return export_str;
 }
@@ -56,23 +68,25 @@ pub fn build(b: *std.Build) !void {
     install_website.step.dependOn(b.getUninstallStep());
     b.getInstallStep().dependOn(&install_website.step);
     install_website_run_step.dependOn(&install_website.step);
-    const shared_enums = @import("src/shared_enums.zig");
-    const write_export_enums_str = std.fmt.comptimePrint("//This is auto-generated from the build.zig file to use for wasm-javascript reading\n\n{s}{s}{s}", .{
-        comptime EnumsToJSClass(shared_enums.Direction, "Direction"),
-        comptime EnumsToJSClass(shared_enums.PathfindingType, "PathfindingType"),
-        comptime EnumsToJSClass(shared_enums.PrintType, "PrintType"),
-    });
-    const write_export_enums = b.addWriteFile(
-        "wasm_enums_to_js.js",
+    const shared = @import("src/shared.zig");
+    // zig fmt: off
+    comptime var write_export_enums_str: []const u8 = &.{};
+    write_export_enums_str = write_export_enums_str ++ "//This is auto-generated from the build.zig file to use for wasm-javascript reading\n\n"
+        ++ comptime EnumsToJSClass(shared.Direction, "Direction")
+        ++ EnumsToJSClass(shared.PathfindingType, "PathfindingType")
+        ++ EnumsToJSClass(shared.PrintType, "PrintType");
+    // zig fmt: on
+    const write_export_file = b.addWriteFile(
+        "wasm_to_js.js",
         write_export_enums_str,
     );
-    write_export_enums.step.dependOn(&install_website.step);
-    const add_export_enums = b.addInstallDirectory(.{
-        .source_dir = write_export_enums.getDirectory(),
+    write_export_file.step.dependOn(&install_website.step);
+    const add_export_file = b.addInstallDirectory(.{
+        .source_dir = write_export_file.getDirectory(),
         .install_dir = .bin,
         .install_subdir = www_root,
     });
-    add_export_enums.step.dependOn(&write_export_enums.step);
+    add_export_file.step.dependOn(&write_export_file.step);
 
     const wasm_exe = b.addExecutable(.{
         .name = wasm_name,
@@ -100,7 +114,7 @@ pub fn build(b: *std.Build) !void {
     });
     const wasm_step = b.step("wasm", "Build wasm binaries and copies files to bin.");
     wasm_step.dependOn(&install_wasm.step);
-    install_wasm.step.dependOn(&add_export_enums.step);
+    install_wasm.step.dependOn(&add_export_file.step);
     install_wasm.step.dependOn(&install_website.step);
 
     const run_website_step = b.step("server", "Initializes the wasm step, and runs python http.server");

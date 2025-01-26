@@ -79,7 +79,8 @@ a {
 }
 
 #create-paths-body {
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   height: 200px;
 }
 
@@ -107,7 +108,7 @@ a {
 }
 
 .badge.mark {
-  background-color: darkred;
+  background-color: red;
 }
 
 .badge.visited {
@@ -117,7 +118,6 @@ a {
 .path-container {
   display: grid;
   grid-template-columns: repeat(auto-fit, 75px);
-  width: 100%;
   vertical-align: middle;
   gap: 5px;
   border: 1px solid white;
@@ -125,7 +125,7 @@ a {
   padding: 5px;
 }
 
-.path-coordinate {
+.square-button {
   display: grid;
   place-items: center;
   text-align: center;
@@ -137,17 +137,19 @@ a {
   cursor: pointer;
 }
 
-.path-coordinate.path-start {
+.square-button.path-start,
+.square-button.path-ok {
   background-color: green;
 }
 
-.path-coordinate.path-end,
-.path-coordinate.path-out-of-bounds {
+.square-button.path-end,
+.square-button.path-error,
+.square-button.path-mark {
   background-color: darkred;
 }
 
-.path-coordinate.highlight-path,
-.path-coordinate.custom-button {
+.square-button.highlight-path,
+.square-button.custom-button {
   background-color: black;
 }
 
@@ -155,7 +157,7 @@ a {
   background-size: cover;
 }
 
-.path-coordinate.path-cost {
+.square-button.path-cost {
   background-color: blue;
   cursor: initial;
 }
@@ -184,11 +186,10 @@ a {
 #paths-section {
   position: fixed;
   bottom: 0px;
-  right: 0;
+  left: 0;
   z-index: 2;
   height: 290px;
   width: 100%;
-  margin-bottom: 15px;
 }
 
 .brute-force-only {
