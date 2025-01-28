@@ -32,5 +32,6 @@ fn find_path(grid_slice: []const u8, pathfinding_type: nodes.NodeMap.Pathfinding
         .minimum_cost_node => try nmap.mcn_path(allocator),
         .shortest_steps_node => try nmap.ssn_path(allocator),
         .brute_forcing => try nmap.brute_force_path(allocator),
+        .mst_and_traversal => try nmap.mst_and_traversal(allocator),
     }
 }

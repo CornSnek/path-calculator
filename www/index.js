@@ -25,8 +25,8 @@ let generate_paths;
 let create_paths_body;
 let query_save_data;
 let query_generate_save;
-let generate_brute_force_early;
-let cancel_brute_force;
+let generate_path_only;
+let cancel_pathfinder;
 let wasm_worker;
 let color1;
 let color2;
@@ -95,11 +95,11 @@ async function init() {
   as_visited = document.getElementById("as-visited");
   path_algorithm = document.getElementById("path-algorithm");
   path_algorithm_description = document.getElementById("path-algorithm-description");
-  generate_brute_force_early = document.getElementById("generate-brute-force-early");
-  generate_brute_force_early.onclick = () => {
+  generate_path_only = document.getElementById("generate-path-early");
+  generate_path_only.onclick = () => {
     Atomics.store(shared_memory, offsets.brute_force, 1);
   }
-  cancel_brute_force = document.getElementById("cancel-brute-force");
+  cancel_pathfinder = document.getElementById("cancel-pathfinder");
   for (let i = 0; i < PathfindingType.$$length; i++) {
     const option = document.createElement("option");
     path_algorithm.appendChild(option);
@@ -109,16 +109,18 @@ async function init() {
   path_algorithm.onchange = (e) => {
     const pathfinder_int = parseInt(e.target.value);
     path_algorithm_description.textContent = PathfindingType.$description[pathfinder_int];
-    if (pathfinder_int !== PathfindingType.brute_forcing) {
-      document.querySelectorAll(".brute-force-only").forEach(e => {
-        e.style.display = "none";
-      });
-    } else {
-      document.querySelectorAll(".brute-force-only").forEach(e => {
-        e.style.display = "initial";
-      })
+    switch (pathfinder_int) {
+      case PathfindingType.brute_forcing:
+      case PathfindingType.mst_and_traversal:
+        document.querySelectorAll(".early-or-cancel").forEach(e => {
+          e.style.display = "initial";
+        });
+        break;
+      default:
+        document.querySelectorAll(".early-or-cancel").forEach(e => {
+          e.style.display = "none";
+        });
     }
-
   }
   generate_paths = document.getElementById("generate-paths");
   create_paths_body = document.getElementById("create-paths-body");
@@ -808,10 +810,10 @@ function ParsePathfinderCustom() {
   } else {
     total_cost_div.innerHTML = `Error:<br>Out of bounds!`;
   }
-  total_paths_div.innerHTML = `${coordinates_used.length-coordinates_used_cpy.length}/${coordinates_used.length}<br><em class="badge mark">M</em><br>visited`
-  if(coordinates_used_cpy.length!=0){
+  total_paths_div.innerHTML = `${coordinates_used.length - coordinates_used_cpy.length}/${coordinates_used.length}<br><em class="badge mark">M</em><br>visited`
+  if (coordinates_used_cpy.length != 0) {
     total_paths_div.classList.add("path-error");
-  }else{
+  } else {
     total_paths_div.classList.add("path-ok");
   }
   const add_div = document.createElement("div");
@@ -893,8 +895,10 @@ const worker_handler_module = {
   set_error_message,
   generate_disable_state,
   ParsePathfinder,
-  OutputBruteForcing,
+  OutputPathfinder,
   JSPrint,
+  MarkColor,
+  ClearColorGrid
 }
 let shared_buffer;
 let shared_memory;
@@ -914,7 +918,7 @@ function create_wasm_worker() {
   };
   wasm_worker.onerror = () => generate_disable_state(false);
   wasm_worker.postMessage(['m', shared_buffer, offsets]);
-  cancel_brute_force.onclick = () => {
+  cancel_pathfinder.onclick = () => {
     Atomics.store(shared_memory, offsets.cancel, 1);
   }
 }
@@ -925,7 +929,7 @@ function bytes_to_big_num(bytes) {
   }
   return result;
 }
-function OutputBruteForcing(str, pn_total, pn_now) {
+function OutputPathfinder(str, pn_total, pn_now) {
   path_algorithm_description.innerHTML = str;
   if (pn_total != null && pn_now != null) {
     const progress = document.createElement("progress");
@@ -952,8 +956,8 @@ function disable_buttons(bool) {
 }
 function generate_disable_state(bool) {
   disable_buttons(bool);
-  generate_brute_force_early.disabled = !bool;
-  cancel_brute_force.disabled = !bool;
+  generate_path_only.disabled = !bool;
+  cancel_pathfinder.disabled = !bool;
   if (bool) {
     if (output_interval_i === null)
       output_interval_i = setInterval(() => Atomics.store(shared_memory, offsets.output, 1), 1000);
@@ -962,6 +966,21 @@ function generate_disable_state(bool) {
       clearInterval(output_interval_i);
     output_interval_i = null;
   }
+}
+function MarkColor(color, x, y) {
+  const divs = Array.from(grid_body.children);
+  const div = divs[y * num_columns + x]
+  div.style.setProperty("--highlight-color", color);
+  div.classList.add("highlight-coord");
+  div.classList.remove("unhighlight-coord");
+}
+function ClearColorGrid() {
+  const divs = Array.from(grid_body.children);
+  divs.forEach(div => {
+    div.style.removeProperty("--highlight-color");
+    div.classList.add("unhighlight-coord");
+    div.classList.remove("highlight-coord");
+  });
 }
 function JSPrint(Type, string) {
   if (Type === PrintType.log) {

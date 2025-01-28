@@ -13,6 +13,12 @@ pub const Node = packed struct {
 pub const Coordinate = struct {
     x: u32,
     y: u32,
+    pub fn zero() Coordinate {
+        return .{ .x = 0, .y = 0 };
+    }
+    pub fn eq(self: Coordinate, other: Coordinate) bool {
+        return self.x == other.x and self.y == other.y;
+    }
     pub fn format(self: Coordinate, comptime _: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
         try writer.writeAll("C[");
         try std.fmt.formatInt(self.x, 10, .lower, options, writer);
@@ -457,11 +463,13 @@ pub const NodeMap = struct {
         minimum_cost_node,
         shortest_steps_node,
         brute_forcing,
+        mst_and_traversal,
         pub fn alt_names(self: PathfindingType) []const u8 {
             return switch (self) {
                 .minimum_cost_node => "Minimum Cost to Next Node",
                 .shortest_steps_node => "Shortest Steps to Next Node",
                 .brute_forcing => "Brute Forcing",
+                .mst_and_traversal => "Minimum Spanning Tree Traversal",
             };
         }
         pub fn description(self: PathfindingType) []const u8 {
@@ -469,6 +477,7 @@ pub const NodeMap = struct {
                 .minimum_cost_node => "The least cost node is chosen first for each path.",
                 .shortest_steps_node => "The node with the shortest amount of steps is chosen first for each path.",
                 .brute_forcing => "Warning! Brute Forcing is extremely slow when selecting a large amount of coordinates, but this pathfinding gives the lowest cost out of the other pathfinders.",
+                .mst_and_traversal => "This creates a minimum spanning tree (Marked in blue), and tries to traverse circularly while trying permutations of its branches.",
             };
         }
     };
@@ -624,6 +633,326 @@ pub const NodeMap = struct {
         std.log.debug("Total cost for this pathfind is {}.\n", .{total_cost});
         wasm_end_pathfinder(false);
     }
+    const NodeToNode = struct {
+        start_c: Coordinate = Coordinate.zero(),
+        end_c: Coordinate = Coordinate.zero(),
+        result: PathResult = .{},
+        fn deinit(self: *NodeToNode, allocator: std.mem.Allocator) void {
+            self.result.deinit(allocator);
+        }
+    };
+    ///Doubly-linked multi list of coordinates. Used for coordinate traversal.
+    const CoordinateTree = struct {
+        pub const InvalidCoord: u8 = 0b11111111;
+        coord_index: [15 * 15]u8,
+        coords: std.ArrayListUnmanaged(Coordinate),
+        goto: std.ArrayListUnmanaged(std.ArrayListUnmanaged(u8)) = .{},
+        width: u32,
+        height: u32,
+        fn init(allocator: std.mem.Allocator, coords: std.ArrayListUnmanaged(Coordinate), width: u32, height: u32) !CoordinateTree {
+            std.debug.assert(width <= 15 and height <= 15);
+            var ret: CoordinateTree = .{
+                .coords = coords,
+                .coord_index = [1]u8{InvalidCoord} ** (15 * 15),
+                .width = width,
+                .height = height,
+            };
+            for (ret.coords.items, 0..) |c, i| {
+                ret.coord_index[c.y * width + c.x] = @intCast(i);
+            }
+            try ret.goto.appendNTimes(allocator, .{}, coords.items.len);
+            return ret;
+        }
+        fn index(self: CoordinateTree, c: Coordinate) u8 {
+            const ci = self.coord_index[c.y * self.width + c.x];
+            std.debug.assert(ci != InvalidCoord);
+            return ci;
+        }
+        fn link(self: *CoordinateTree, allocator: std.mem.Allocator, c1: Coordinate, c2: Coordinate) !void {
+            const c1i = self.index(c1);
+            const c2i = self.index(c2);
+            try self.goto.items[c1i].append(allocator, c2i);
+            try self.goto.items[c2i].append(allocator, c1i);
+        }
+        fn print_links(self: CoordinateTree, c: Coordinate) void {
+            std.log.debug("{} -> ", .{c});
+            for (self.goto.items[self.index(c)].items) |ci| {
+                std.log.debug("{} ", .{self.coords.items[ci]});
+            }
+            std.log.debug("\n", .{});
+        }
+        ///(+x,+y) is (right,down) and not (right,up), so the angle is clockwise.
+        ///And angle goes from 0 to 180 deg then to -180 deg, which makes the order 3rd/4th/1st/2nd quadrants.
+        const ClockwiseCtx = struct {
+            pivot: Coordinate,
+            pub fn block_sort_fn(ctx: ClockwiseCtx, lhs: Coordinate, rhs: Coordinate) bool {
+                const rhs_y: f32 = @as(f32, @floatFromInt(rhs.y)) - @as(f32, @floatFromInt(ctx.pivot.y));
+                const rhs_x: f32 = @as(f32, @floatFromInt(rhs.x)) - @as(f32, @floatFromInt(ctx.pivot.x));
+                const lhs_y: f32 = @as(f32, @floatFromInt(lhs.y)) - @as(f32, @floatFromInt(ctx.pivot.y));
+                const lhs_x: f32 = @as(f32, @floatFromInt(lhs.x)) - @as(f32, @floatFromInt(ctx.pivot.x));
+                const lhs_a = std.math.atan2(lhs_y, lhs_x);
+                const rhs_a = std.math.atan2(rhs_y, rhs_x);
+                //std.log.debug("{d} {d} {} {}\n", .{ std.math.deg_per_rad * lhs_a, std.math.deg_per_rad * rhs_a, lhs, rhs });
+                return lhs_a < rhs_a;
+            }
+        };
+        ///List of outer-edge points (Points with only 1 index in .goto), excluding start_c, sorted in counter-clockwise order
+        fn outer_coords_cw(self: CoordinateTree, allocator: std.mem.Allocator, start_c: Coordinate) !std.ArrayListUnmanaged(Coordinate) {
+            const ex_i = self.index(start_c);
+            var cc_coords: std.ArrayListUnmanaged(Coordinate) = .{};
+            errdefer cc_coords.deinit(allocator);
+            for (0..self.coords.items.len) |i| {
+                if (i == ex_i) continue;
+                if (self.goto.items[i].items.len == 1)
+                    try cc_coords.append(allocator, self.coords.items[i]);
+            }
+            std.sort.block(Coordinate, cc_coords.items, ClockwiseCtx{ .pivot = start_c }, ClockwiseCtx.block_sort_fn);
+            return cc_coords;
+        }
+        fn deinit(self: *CoordinateTree, allocator: std.mem.Allocator) void {
+            self.coords.deinit(allocator);
+            for (0..self.goto.items.len) |i| self.goto.items[i].deinit(allocator);
+            self.goto.deinit(allocator);
+        }
+    };
+    const TraversalNode = struct {
+        index: u8,
+        branch_i: u8,
+        pub fn format(tn: @This(), comptime _: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+            try writer.writeByte('[');
+            try std.fmt.formatInt(tn.index, 10, .lower, options, writer);
+            try writer.writeByte(',');
+            try std.fmt.formatInt(tn.branch_i, 10, .lower, options, writer);
+            try writer.writeByte(']');
+        }
+    };
+    /// Minimum Spanning Tree algorithm using Prim's algorithm, and traverse coordinates in a circular manner.
+    pub fn mst_and_traversal(self: NodeMap, allocator: std.mem.Allocator) !void {
+        var coordinates_left = try self.coordinates.clone(allocator);
+        defer coordinates_left.deinit(allocator);
+        std.sort.block(Coordinate, coordinates_left.items, {}, Coordinate.block_sort_fn);
+        var ntn_results: std.ArrayListUnmanaged(NodeToNode) = .{};
+        defer {
+            for (ntn_results.items) |*ntn| ntn.deinit(allocator);
+            ntn_results.deinit(allocator);
+        }
+        var coordinates_to_scan: std.ArrayListUnmanaged(Coordinate) = .{};
+        defer coordinates_to_scan.deinit(allocator);
+        try coordinates_to_scan.append(allocator, .{ .x = self.start_x, .y = self.start_y });
+        //Do prim algorithm to get an mst with the start coordinate
+        while (coordinates_left.items.len != 0) {
+            try coordinates_to_scan.append(allocator, undefined); //The next chosen coordinate will be added as defined and be in the last element of ntn_results.
+            try ntn_results.append(allocator, .{});
+            var lowest_cost: u32 = std.math.maxInt(u32);
+            var lowest_cost_c: Coordinate = undefined;
+            for (coordinates_to_scan.items[0 .. coordinates_to_scan.items.len - 1]) |prev_c| {
+                for (coordinates_left.items) |next_c| {
+                    var vmap_temp = try VisitedMap.init(allocator, self);
+                    defer vmap_temp.deinit(allocator);
+                    var result = try self.dijkstra(allocator, &vmap_temp, prev_c, next_c, coordinates_left.items);
+                    if (result.path.items.len == 1) { //Exclude unreachable nodes.
+                        result.deinit(allocator);
+                        continue;
+                    }
+                    if (result.cost < lowest_cost) {
+                        lowest_cost = result.cost;
+                        coordinates_to_scan.items[coordinates_to_scan.items.len - 1] = next_c;
+                        lowest_cost_c = next_c;
+                        ntn_results.items[ntn_results.items.len - 1].deinit(allocator);
+                        ntn_results.items[ntn_results.items.len - 1] = .{ .start_c = prev_c, .end_c = next_c, .result = result };
+                    } else result.deinit(allocator);
+                }
+            }
+            const remove_c = std.sort.binarySearch(Coordinate, lowest_cost_c, coordinates_left.items, {}, Coordinate.binary_search_fn).?;
+            _ = coordinates_left.orderedRemove(remove_c);
+        }
+        var coords_with_start: std.ArrayListUnmanaged(Coordinate) = .{};
+        var coord_tree: CoordinateTree = undefined;
+        {
+            errdefer coords_with_start.deinit(allocator);
+            try coords_with_start.ensureTotalCapacityPrecise(allocator, self.coordinates.items.len + 1);
+            for (self.coordinates.items) |c| coords_with_start.appendAssumeCapacity(c);
+            coords_with_start.appendAssumeCapacity(.{ .x = self.start_x, .y = self.start_y });
+            coord_tree = try CoordinateTree.init(allocator, coords_with_start, self.width, self.height);
+        }
+        defer coord_tree.deinit(allocator);
+        for (ntn_results.items) |ntn|
+            try coord_tree.link(allocator, ntn.start_c, ntn.end_c);
+        for (coord_tree.coords.items) |c|
+            coord_tree.print_links(c);
+        var outer_c_cw = try coord_tree.outer_coords_cw(allocator, .{ .x = self.start_x, .y = self.start_y });
+        defer outer_c_cw.deinit(allocator);
+        var outer_c_path: std.ArrayListUnmanaged(std.ArrayListUnmanaged(u8)) = .{}; //Indices from coord_tree
+        defer {
+            for (outer_c_path.items) |*arr|
+                arr.deinit(allocator);
+            outer_c_path.deinit(allocator);
+        }
+        try outer_c_path.appendNTimes(allocator, .{}, outer_c_cw.items.len);
+        var outer_index_hm: std.AutoHashMapUnmanaged(u8, u8) = .{}; //K: Index of CoordinateTree, V: Index of outer_c_cw
+        defer outer_index_hm.deinit(allocator);
+        try outer_index_hm.ensureTotalCapacity(allocator, @intCast(outer_c_cw.items.len));
+        for (outer_c_cw.items, 0..) |oc, i| outer_index_hm.putAssumeCapacityNoClobber(coord_tree.index(oc), @intCast(i));
+        var node_trav_arr: std.ArrayListUnmanaged(TraversalNode) = .{};
+        defer node_trav_arr.deinit(allocator);
+        var node_trav_arr_i: usize = 0;
+        try node_trav_arr.append(allocator, .{ .index = coord_tree.index(.{ .x = self.start_x, .y = self.start_y }), .branch_i = 0 });
+        while (node_trav_arr.items.len != 0) { //This traverses through the mst to get the path from start coordinate to an outer coordinate
+            const this_index = node_trav_arr.items[node_trav_arr_i].index;
+            const branch_i = node_trav_arr.items[node_trav_arr_i].branch_i;
+            if (branch_i != coord_tree.goto.items[this_index].items.len) {
+                node_trav_arr.items[node_trav_arr_i].branch_i += 1;
+                node_trav_arr_i += 1;
+                try node_trav_arr.ensureTotalCapacity(allocator, node_trav_arr_i + 1);
+                node_trav_arr.items.len += 1;
+                const next_index = coord_tree.goto.items[this_index].items[branch_i];
+                node_trav_arr.items[node_trav_arr_i] = .{ .index = next_index, .branch_i = 1 }; //Skip 1st as it links back to the previous index (Circular)
+            } else {
+                if (node_trav_arr_i == 0) break;
+                if (outer_index_hm.get(node_trav_arr.getLast().index)) |i| {
+                    for (1..node_trav_arr.items.len) |j| { //Skip 0 as it is the start point index.
+                        const tn = node_trav_arr.items[j];
+                        try outer_c_path.items[i].append(allocator, tn.index);
+                    }
+                }
+                node_trav_arr_i -= 1;
+                node_trav_arr.items.len -= 1;
+            }
+        }
+        for (outer_c_path.items) |path| {
+            for (path.items) |i| {
+                std.log.debug("{} ", .{i});
+            }
+            std.log.debug("\n", .{});
+        }
+        var index_visited: [15 * 15]bool = undefined;
+        var read_state: enum { start, reverse } = .start;
+        var lowest_cost: u32 = std.math.maxInt(u32);
+        var lowest_results: std.ArrayListUnmanaged(PathResult) = .{};
+        defer {
+            for (lowest_results.items) |*res| {
+                res.deinit(allocator);
+            }
+            lowest_results.deinit(allocator);
+        }
+        var bit_pn: ProgressNumber = try ProgressNumber.init(allocator, 0); //Used to get reverse combinations of the path edges (2^n combinations).
+        defer bit_pn.deinit(allocator);
+        var total_bits_pn: ProgressNumber = try ProgressNumber.init(allocator, 0);
+        defer total_bits_pn.deinit(allocator);
+        try bit_pn.expand(allocator, 1 + (outer_c_cw.items.len + 1) / 8); //len+1 to check bit_pn.bit(len) if overfilled.
+        try total_bits_pn.expand(allocator, 1 + (outer_c_cw.items.len + 1) / 8);
+        total_bits_pn.set(outer_c_cw.items.len + 1);
+        var output_mst_traversal: std.ArrayListUnmanaged(u8) = .{};
+        defer output_mst_traversal.deinit(allocator);
+        while (!bit_pn.bit(outer_c_cw.items.len + 1)) : (try bit_pn.add_one(allocator)) {
+            if (if (UsingWasm) GetCancel() else false) break;
+            var outer_c_path_cpy: std.ArrayListUnmanaged(std.ArrayListUnmanaged(u8)) = .{};
+            defer {
+                for (outer_c_path_cpy.items) |*arr|
+                    arr.deinit(allocator);
+                outer_c_path_cpy.deinit(allocator);
+            }
+            try outer_c_path_cpy.ensureTotalCapacityPrecise(allocator, outer_c_path.items.len);
+            for (0..outer_c_path.items.len) |i| {
+                outer_c_path_cpy.appendAssumeCapacity(try outer_c_path.items[i].clone(allocator));
+                if (bit_pn.bit(i)) std.mem.reverse(u8, outer_c_path_cpy.items[i].items);
+            }
+            while (true) {
+                var offset_i: u8 = 0;
+                while (offset_i != outer_c_cw.items.len) : (offset_i += 1) {
+                    @memset(&index_visited, false);
+                    if (UsingWasm and GetOutput()) {
+                        try output_mst_traversal.writer(allocator).writeAll("This algorithm will now find permutations of its branches to find the lowest cost.");
+                        OutputPathfinder(
+                            output_mst_traversal.items.ptr,
+                            output_mst_traversal.items.len,
+                            total_bits_pn.bytes.items.ptr,
+                            total_bits_pn.bytes.items.len,
+                            bit_pn.bytes.items.ptr,
+                            bit_pn.bytes.items.len,
+                        );
+                        output_mst_traversal.items.len = 0;
+                        for (ntn_results.items) |ntn| {
+                            for (ntn.result.path.items) |nr| {
+                                const color: []const u8 = "blue";
+                                MarkColor(color.ptr, color.len, nr.coord.x, nr.coord.y);
+                            }
+                        }
+                    }
+                    var i: u8 = 0;
+                    var coordinates_to_visit: std.ArrayListUnmanaged(Coordinate) = .{};
+                    defer coordinates_to_visit.deinit(allocator);
+                    try coordinates_to_visit.ensureTotalCapacityPrecise(allocator, self.coordinates.items.len);
+                    while (i != outer_c_cw.items.len) : (i += 1) {
+                        const j = (i + offset_i) % outer_c_cw.items.len; //Do preorder traveral where coordinates are visited once.
+                        const p = outer_c_path_cpy.items[j];
+                        for (p.items) |ind| {
+                            if (!index_visited[ind]) {
+                                coordinates_to_visit.appendAssumeCapacity(coord_tree.coords.items[ind]);
+                                index_visited[ind] = true;
+                            }
+                        }
+                    }
+                    //std.log.debug("{any}\n", .{coordinates_to_visit.items});
+                    var vmap: VisitedMap = try VisitedMap.init(allocator, self);
+                    defer vmap.deinit(allocator);
+                    var current_c: Coordinate = .{ .x = self.start_x, .y = self.start_y };
+                    var possible_lowest_cost: u32 = 0;
+                    var possible_lowest_results: std.ArrayListUnmanaged(PathResult) = .{};
+                    errdefer {
+                        for (possible_lowest_results.items) |*res| {
+                            res.deinit(allocator);
+                        }
+                        possible_lowest_results.deinit(allocator);
+                    }
+                    try possible_lowest_results.ensureTotalCapacityPrecise(allocator, coordinates_to_visit.items.len);
+                    for (0..coordinates_to_visit.items.len) |cv_i| {
+                        const next_c = coordinates_to_visit.items[cv_i];
+                        const results = try self.dijkstra(allocator, &vmap, current_c, next_c, coordinates_to_visit.items[cv_i + 1 ..]);
+                        possible_lowest_cost += results.cost;
+                        possible_lowest_results.appendAssumeCapacity(results);
+                        current_c = next_c;
+                    }
+                    if (possible_lowest_cost < lowest_cost) {
+                        std.log.debug("Found lower cost: {any} by {}\n", .{ coordinates_to_visit.items, possible_lowest_cost });
+                        lowest_cost = possible_lowest_cost;
+                        for (lowest_results.items) |*res| { //deinit previous lowest_results memory
+                            res.deinit(allocator);
+                        }
+                        lowest_results.deinit(allocator);
+                        lowest_results = possible_lowest_results;
+                    } else {
+                        for (possible_lowest_results.items) |*res| {
+                            res.deinit(allocator);
+                        }
+                        possible_lowest_results.deinit(allocator);
+                    }
+                    if (UsingWasm and CalculatePathEarly()) {
+                        try wasm_start_pathfinder(allocator);
+                        for (lowest_results.items) |result| {
+                            try wasm_append_path_bytes(result, allocator);
+                        }
+                        wasm_end_pathfinder(true);
+                    }
+                }
+                if (read_state == .reverse) break;
+                read_state = .reverse;
+                std.mem.reverse(Coordinate, outer_c_cw.items);
+                std.mem.reverse(std.ArrayListUnmanaged(u8), outer_c_path.items);
+            }
+        }
+        if (UsingWasm) {
+            const bfdesc = PathfindingType.mst_and_traversal.description();
+            OutputPathfinder(bfdesc.ptr, bfdesc.len, 0, 0, 0, 0);
+            ClearColorGrid();
+        }
+        try wasm_start_pathfinder(allocator);
+        for (lowest_results.items) |result| {
+            std.log.debug("{} is the chosen coordinate with path {any} (Total cost is {})\n", .{ result.path.getLast().coord, result.path.items, result.cost });
+            try wasm_append_path_bytes(result, allocator);
+        }
+        wasm_end_pathfinder(false);
+    }
     /// Next lexicographical order of a permutation of a slice.
     fn permutation_next(comptime T: type, items: []T, context: anytype, comptime less_than: fn (@TypeOf(context), lhs: T, rhs: T) bool) bool {
         for (0..items.len - 1) |i| {
@@ -687,10 +1016,12 @@ pub const NodeMap = struct {
             self.nodes.deinit(allocator);
         }
     };
-    extern fn CalculateBruteForceEarly() bool;
+    extern fn CalculatePathEarly() bool;
     extern fn GetOutput() bool;
     extern fn GetCancel() bool;
-    extern fn OutputBruteForcing([*c]const u8, usize, [*c]const u8, usize, [*c]const u8, usize) void;
+    extern fn MarkColor([*c]const u8, usize, usize, usize) void;
+    extern fn ClearColorGrid() void;
+    extern fn OutputPathfinder([*c]const u8, usize, [*c]const u8, usize, [*c]const u8, usize) void;
     pub fn brute_force_path(self: NodeMap, allocator: std.mem.Allocator) !void {
         var permutations = try self.coordinates.clone(allocator);
         defer permutations.deinit(allocator);
@@ -701,7 +1032,6 @@ pub const NodeMap = struct {
             for (0..permutations.items.len) |i|
                 try pn_total.multiply(allocator, @intCast(i + 1));
         }
-        std.log.warn("{X:0<2}\n", .{pn_total});
         var lowest_results: std.ArrayListUnmanaged(PathResult) = .{};
         defer {
             for (lowest_results.items) |*res| {
@@ -722,12 +1052,12 @@ pub const NodeMap = struct {
             if (UsingWasm) {
                 try pn_now.add_one(allocator);
                 if (GetOutput()) {
-                    try output_brute_forcing.writer(allocator).writeAll("You can press 'Get Brute Force Path Early' to get a calculated path, but the lowest cost path may not be found yet.<br>Calculating Coordinate Permutation: ");
+                    try output_brute_forcing.writer(allocator).writeAll("You can press 'Generate Path Early' to get a calculated path, but the lowest cost path may not be found yet.<br>Calculating Coordinate Permutation: ");
                     for (next_coordinates.items) |c|
                         try output_brute_forcing.writer(allocator).print("({: >2},{: >2}) &#x2192; ", .{ c.x, c.y });
                     output_brute_forcing.items.len -= " &#x2192; ".len;
                     try output_brute_forcing.writer(allocator).print("<br>Current lowest total cost found: {}", .{lowest_total_cost});
-                    OutputBruteForcing(
+                    OutputPathfinder(
                         output_brute_forcing.items.ptr,
                         output_brute_forcing.items.len,
                         pn_total.bytes.items.ptr,
@@ -780,20 +1110,18 @@ pub const NodeMap = struct {
                 lowest_results.deinit(allocator);
                 lowest_results = possible_lowest_results;
             }
-            if (UsingWasm) {
-                if (CalculateBruteForceEarly()) {
-                    try wasm_start_pathfinder(allocator);
-                    for (lowest_results.items) |result| {
-                        try wasm_append_path_bytes(result, allocator);
-                    }
-                    wasm_end_pathfinder(true);
+            if (UsingWasm and CalculatePathEarly()) {
+                try wasm_start_pathfinder(allocator);
+                for (lowest_results.items) |result| {
+                    try wasm_append_path_bytes(result, allocator);
                 }
+                wasm_end_pathfinder(true);
             }
             if (!permutation_next(Coordinate, permutations.items, {}, Coordinate.block_sort_fn)) break;
         }
         if (UsingWasm) {
             const bfdesc = PathfindingType.brute_forcing.description();
-            OutputBruteForcing(bfdesc.ptr, bfdesc.len, 0, 0, 0, 0);
+            OutputPathfinder(bfdesc.ptr, bfdesc.len, 0, 0, 0, 0);
         }
         try wasm_start_pathfinder(allocator);
         for (lowest_results.items) |result| {

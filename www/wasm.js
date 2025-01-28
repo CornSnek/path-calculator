@@ -20,14 +20,14 @@ function ParsePathfinder(pathfinder_ptr, pathfinder_len, disable_state) {
   postMessage(['f', "ParsePathfinder", {s:disable_state, a:new Uint32Array(PathfinderExports.memory.buffer, pathfinder_ptr, pathfinder_len)}]);
   postMessage(['f', "generate_disable_state", disable_state]);
 }
-function OutputBruteForcing(str_ptr, str_len, pn_total_ptr, pn_total_len, pn_now_ptr, pn_now_len) {
+function OutputPathfinder(str_ptr, str_len, pn_total_ptr, pn_total_len, pn_now_ptr, pn_now_len) {
   if (pn_total_ptr != 0 && pn_now_ptr != 0) {
-    postMessage(['f', "OutputBruteForcing", TD.decode(new Uint8Array(PathfinderExports.memory.buffer, str_ptr, str_len)),
+    postMessage(['f', "OutputPathfinder", TD.decode(new Uint8Array(PathfinderExports.memory.buffer, str_ptr, str_len)),
       new Uint8Array(PathfinderExports.memory.buffer, pn_total_ptr, pn_total_len),
       new Uint8Array(PathfinderExports.memory.buffer, pn_now_ptr, pn_now_len),
     ]);
   } else {
-    postMessage(['f', "OutputBruteForcing", TD.decode(new Uint8Array(PathfinderExports.memory.buffer, str_ptr, str_len)), null, null]);
+    postMessage(['f', "OutputPathfinder", TD.decode(new Uint8Array(PathfinderExports.memory.buffer, str_ptr, str_len)), null, null]);
   }
 }
 let shared_buffer;
@@ -39,17 +39,26 @@ function GetOutput() {
 function GetCancel() {
   return Atomics.compareExchange(shared_memory, offsets.cancel, 1, 0);
 }
-function CalculateBruteForceEarly() {
+function CalculatePathEarly() {
   return Atomics.compareExchange(shared_memory, offsets.brute_force, 1, 0);
+}
+function MarkColor(str_ptr,str_len,x,y) {
+  console.log(str_ptr,str_len)
+  postMessage(['f',"MarkColor",TD.decode(new Uint8Array(PathfinderExports.memory.buffer, str_ptr, str_len)),x,y]);
+}
+function ClearColorGrid() {
+  postMessage(['f',"ClearColorGrid"]);
 }
 WebAssembly.instantiateStreaming(fetch("./pathfinder.wasm"), {
   env: {
     JSPrint,
     ParsePathfinder,
-    OutputBruteForcing,
-    CalculateBruteForceEarly,
+    OutputPathfinder,
+    CalculatePathEarly,
     GetOutput,
     GetCancel,
+    MarkColor,
+    ClearColorGrid,
   },
 }).then(result => {
   PathfinderWasmObj = result;

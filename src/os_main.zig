@@ -65,27 +65,14 @@ pub fn main() !void {
     var GPA: std.heap.GeneralPurposeAllocator(.{}) = .{};
     defer _ = GPA.deinit();
     const allocator = GPA.allocator();
-    var nmap = try nodes.NodeMap.init(allocator, ExampleMap4);
+    var nmap = try nodes.NodeMap.init(allocator, ExampleMap2);
     defer nmap.deinit(allocator);
-    //std.log.debug("\nLCN pathfind:\n", .{});
-    //try nmap.mcn_path(allocator);
-    //std.log.debug("\nSSN pathfind:\n", .{});
-    //try nmap.ssn_path(allocator);
-    std.log.debug("\nBruteforce pathfind:\n", .{});
-    try nmap.brute_force_path(allocator);
-    var pn = try ProgressNumber.init(allocator, 0);
-    defer pn.deinit(allocator);
-    try pn.add_one(allocator);
-    std.debug.print("{[0]x:0>2} or {[0]}\n", .{pn});
-    for (1..10 + 1) |i| {
-        try pn.multiply(allocator, @intCast(i));
-        std.debug.print("{[0]x:0>2} or {[0]}\n", .{pn});
-    }
-}
-
-test "simple test" {
-    var list = std.ArrayList(i32).init(std.testing.allocator);
-    defer list.deinit(); // try commenting this out and see if zig detects the memory leak!
-    try list.append(42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
+    std.log.debug("\nLCN pathfind:\n", .{});
+    try nmap.mcn_path(allocator);
+    std.log.debug("\nSSN pathfind:\n", .{});
+    try nmap.ssn_path(allocator);
+    //std.log.debug("\nBruteforce pathfind:\n", .{});
+    //try nmap.brute_force_path(allocator);
+    std.log.debug("\nMST and traversal pathfind:\n", .{});
+    try nmap.mst_and_traversal(allocator);
 }

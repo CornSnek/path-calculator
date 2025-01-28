@@ -87,8 +87,8 @@
       <label for="path-algorithm">Choose pathfinding algorithm:</label>
       <select id="path-algorithm" disabled></select>
       <button type="button" id="generate-paths" disabled>Generate Paths To Visit</button>
-      <button type="button" class="brute-force-only" id="generate-brute-force-early" disabled>Get Brute Force Path Early</button>
-      <button type="button" class="brute-force-only" id="cancel-brute-force" disabled>Cancel Brute Force</button>
+      <button type="button" class="early-or-cancel" id="generate-path-early" disabled>Generate Path Early</button>
+      <button type="button" class="early-or-cancel" id="cancel-pathfinder" disabled>Cancel Pathfinding</button>
       <br><span id="path-algorithm-description"></span>
       <div>You can hover over coordinates to highlight it on the grid. <b>Bold</b> numbers represent the running total
         or sum of previous costs. Previous paths will mark nodes as <em class="badge visited">V</em>. You can click Edit path to fine-tune or test for cheaper paths.</div>

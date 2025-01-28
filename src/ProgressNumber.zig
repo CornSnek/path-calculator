@@ -1,4 +1,5 @@
 //!Getting little-endian bytes to get the factorial total of the brute force algorithm to interact with js.
+//!Also used to get boolean combinations of bits.
 const std = @import("std");
 const ProgressNumber = @This();
 bytes: std.ArrayListUnmanaged(u8),
@@ -33,6 +34,23 @@ pub fn multiply(self: *ProgressNumber, allocator: std.mem.Allocator, by: u8) !vo
     }
     if (carry != 0)
         try self.bytes.append(allocator, carry);
+}
+///Pad with zeroes
+pub fn expand(self: *ProgressNumber, allocator: std.mem.Allocator, by_bytes: usize) !void {
+    if (by_bytes > self.bytes.items.len) {
+        try self.bytes.ensureTotalCapacityPrecise(allocator, by_bytes);
+        const old_len: usize = self.bytes.items.len;
+        self.bytes.items.len = by_bytes;
+        for (old_len..self.bytes.items.len) |i| {
+            self.bytes.items[i] = 0;
+        }
+    }
+}
+pub fn bit(self: ProgressNumber, offset: usize) bool {
+    return self.bytes.items[offset / 8] & (@as(u8, 1) << @as(u3, @intCast(offset % 8))) != 0;
+}
+pub fn set(self: ProgressNumber, offset: usize) void {
+    self.bytes.items[offset / 8] |= (@as(u8, 1) << @as(u3, @intCast(offset % 8)));
 }
 pub fn format(self: ProgressNumber, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
     try writer.writeAll("{ ");
