@@ -67,12 +67,20 @@ pub fn main() !void {
     const allocator = GPA.allocator();
     var nmap = try nodes.NodeMap.init(allocator, ExampleMap2);
     defer nmap.deinit(allocator);
-    std.log.debug("\nLCN pathfind:\n", .{});
-    try nmap.mcn_path(allocator);
-    std.log.debug("\nSSN pathfind:\n", .{});
-    try nmap.ssn_path(allocator);
+    //std.log.debug("\nLCN pathfind:\n", .{});
+    //try nmap.mcn_path(allocator);
+    //std.log.debug("\nSSN pathfind:\n", .{});
+    //try nmap.ssn_path(allocator);
     //std.log.debug("\nBruteforce pathfind:\n", .{});
     //try nmap.brute_force_path(allocator);
     std.log.debug("\nMST and traversal pathfind:\n", .{});
     try nmap.mst_and_traversal(allocator);
+    var pn: ProgressNumber = try ProgressNumber.init_int(allocator, @as(u40, 0x1234567890));
+    defer pn.deinit(allocator);
+    var pn2: ProgressNumber = try ProgressNumber.init_int(allocator, @as(u40, 0x12345678));
+    defer pn2.deinit(allocator);
+    std.debug.print("{X}\n", .{pn});
+    try pn.multiply(allocator, pn2);
+    std.debug.print("{X}\n", .{pn});
+    std.debug.print("{X}\n",.{0x1234567890*0x12345678});
 }

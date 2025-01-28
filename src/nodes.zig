@@ -839,8 +839,8 @@ pub const NodeMap = struct {
         defer bit_pn.deinit(allocator);
         var total_bits_pn: ProgressNumber = try ProgressNumber.init(allocator, 0);
         defer total_bits_pn.deinit(allocator);
-        try bit_pn.expand(allocator, 1 + (outer_c_cw.items.len + 1) / 8); //len+1 to check bit_pn.bit(len) if overfilled.
-        try total_bits_pn.expand(allocator, 1 + (outer_c_cw.items.len + 1) / 8);
+        try bit_pn.pad(allocator, 1 + (outer_c_cw.items.len + 1) / 8); //len+1 to check bit_pn.bit(len) if overfilled.
+        try total_bits_pn.pad(allocator, 1 + (outer_c_cw.items.len + 1) / 8);
         total_bits_pn.set(outer_c_cw.items.len + 1);
         var output_mst_traversal: std.ArrayListUnmanaged(u8) = .{};
         defer output_mst_traversal.deinit(allocator);
@@ -1030,7 +1030,7 @@ pub const NodeMap = struct {
         defer if (UsingWasm) pn_total.deinit(allocator);
         if (UsingWasm) {
             for (0..permutations.items.len) |i|
-                try pn_total.multiply(allocator, @intCast(i + 1));
+                try pn_total.multiply_byte(allocator, @intCast(i + 1));
         }
         var lowest_results: std.ArrayListUnmanaged(PathResult) = .{};
         defer {
